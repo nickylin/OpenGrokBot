@@ -8,7 +8,7 @@ Message Bots like teammates. Give one a job, keep it around, add another when th
 
 OpenGrokBot is the open-source **[Grok Bot](https://x.ai/bot) alternative**. Same product. Same primitives. Your computer instead of theirs.
 
-> Unofficial. Not affiliated with xAI or Cursor. Source ships after local testing — this README is the public cut.
+> Unofficial community project for learning. Not affiliated with xAI, Grok, or Cursor. See [Disclaimer](#disclaimer).
 
 ## Same Bot. Your computer.
 
@@ -63,3 +63,11 @@ If you need 24/7, keep a small machine awake — or stay on official Grok Bot.
 README-only on GitHub on purpose. The app is in local testing. Code follows when that loop is solid.
 
 License: MIT, when it ships.
+
+## Disclaimer
+
+OpenGrokBot is an independent, unofficial **open-source learning project**. It is not a product of xAI, Grok, or Cursor, and it is not endorsed, sponsored, or certified by them.
+
+**Grok**, **Grok Bot**, **xAI**, and **Cursor** are trademarks or product names of their respective owners. We use those names only to describe what this project studies and how it differs. We do not claim any right in those marks, and **we are not the same company**.
+
+This repository does not provide access to official Grok Bot, Cursor accounts, or xAI cloud computers. Anything you run here is on your own hardware, with keys you bring, at your own risk.
