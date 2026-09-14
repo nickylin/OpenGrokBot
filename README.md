@@ -1,5 +1,7 @@
 # OpenGrokBot
 
+[English](README.md) · [中文](README.zh-CN.md)
+
 **AI teammates that finish the work — on your machine.**
 
 Message Bots like teammates. Give one a job, keep it around, add another when the work grows. They remember how you work, hand off to each other, and come back when something needs your approval.
@@ -7,12 +9,6 @@ Message Bots like teammates. Give one a job, keep it around, add another when th
 OpenGrokBot is the open-source **[Grok Bot](https://x.ai/bot) alternative**. Same product. Same primitives. Your computer instead of theirs.
 
 > Unofficial. Not affiliated with xAI or Cursor. Source ships after local testing — this README is the public cut.
-
----
-
-**中文：** 官方 Grok Bot 是「可留下的 AI 同事」：有名字、有岗位、有电脑、会交接、会停在审批上。OpenGrokBot 按官方介绍做开源平替——**唯一不做的是云电脑**。Bot 跑在你自己的机器上，模型你自备，花名册、群聊、记忆、工具、审批、Routine 都按官方那套来。
-
----
 
 ## Same Bot. Your computer.
 
