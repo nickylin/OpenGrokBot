@@ -2,6 +2,7 @@ id: crew
 name: Offsite crew
 title: Group · 3 Bots
 color: "#5EC8B5"
+shape: cloud
 kind: group
 members:
   - chief

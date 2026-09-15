@@ -1,14 +1,273 @@
 const $ = (id) => document.getElementById(id);
 
-const faces = (color) => `
-<svg viewBox="0 0 64 64" class="face">
-  <circle class="head" cx="32" cy="32" r="32" fill="${color}"/>
-  <g class="eyes">
-    <ellipse class="eye" cx="24" cy="28" rx="4.2" ry="5" fill="#111"/>
-    <ellipse class="eye" cx="40" cy="28" rx="4.2" ry="5" fill="#111"/>
-  </g>
-  <path class="mouth" d="M24 42c4 4 12 4 16 0" fill="none" stroke="#111" stroke-width="2.4" stroke-linecap="round"/>
-</svg>`;
+const FACE_IDS = ["smile", "calm", "grin", "sleepy", "wink", "wide", "glasses", "dots"];
+const SHAPE_IDS = ["circle", "oval", "squircle", "pill", "triangle", "hexagon", "cloud", "teardrop"];
+const SHAPE_LABELS = {
+  circle: "Circle",
+  oval: "Oval",
+  squircle: "Rounded square",
+  pill: "Pill",
+  triangle: "Triangle",
+  hexagon: "Hexagon",
+  cloud: "Cloud",
+  teardrop: "Teardrop",
+};
+const BOT_COLORS = [
+  "#5EC8B5",
+  "#F5A54A",
+  "#4A6FA5",
+  "#8B6CF7",
+  "#3D8BFF",
+  "#E07A3D",
+  "#E8B86D",
+  "#6BA368",
+  "#D46A8A",
+  "#C9A227",
+  "#5B8C7A",
+  "#C47A5A",
+];
+
+function asFace(id) {
+  return FACE_IDS.includes(id) ? id : "smile";
+}
+
+function asShape(id) {
+  return SHAPE_IDS.includes(id) ? id : "circle";
+}
+
+const PARALLEL_EYE_SHAPES = new Set(["triangle", "hexagon", "cloud"]);
+
+/** Per-shape face inset: scale + anchor so features stay inside the silhouette. */
+function featureTransform(shape) {
+  switch (asShape(shape)) {
+    case "triangle":
+      return "translate(32 32) scale(0.62) translate(-32 -28)";
+    case "hexagon":
+      return "translate(32 35) scale(0.74) translate(-32 -31)";
+    case "cloud":
+      return "translate(34 30) scale(0.72) translate(-32 -28)";
+    case "teardrop":
+      return "translate(32 34) scale(0.82) translate(-32 -30)";
+    case "pill":
+      return "translate(32 32) scale(0.84) translate(-32 -30)";
+    case "oval":
+      return "translate(32 32) scale(0.9) translate(-32 -29)";
+    default:
+      return "";
+  }
+}
+
+function featureTransformAttr(shape) {
+  const t = featureTransform(shape);
+  return t ? ` transform="${t}"` : "";
+}
+
+function shapePath(shape) {
+  switch (asShape(shape)) {
+    case "oval":
+      return "M28 9 C46 7 58 17 56 31 C58 47 44 57 28 55 C12 53 6 39 9 25 C7 13 16 10 28 9 Z";
+    case "squircle":
+      return "M24 11 H40 Q52 11 52 23 V41 Q52 53 40 53 H24 Q12 53 12 41 V23 Q12 11 24 11 Z";
+    case "pill":
+      return "M8 18 H56 A14 14 0 0 1 56 46 H8 A14 14 0 0 1 8 18 Z";
+    case "triangle":
+      return "M32 8 C38 8 53 46 54 51 C54 55 10 55 10 51 C10 46 26 8 32 8 Z";
+    case "hexagon":
+      return "M32 8 L51 19 Q54 21 54 25 V39 Q54 43 51 45 L32 56 L13 45 Q10 43 10 39 V25 Q10 21 13 19 Z";
+    case "cloud":
+      return "M12 38 C6 38 4 32 8 27 C6 20 14 16 22 18 C24 10 34 8 42 14 C50 12 58 18 56 26 C61 30 58 40 49 42 C44 49 32 51 22 49 C16 51 12 45 12 38 Z";
+    case "teardrop":
+      return "M32 7 C32 7 54 32 54 42 C54 56 44 58 32 58 C20 58 10 56 10 42 C10 32 32 7 32 7 Z";
+    default:
+      return "";
+  }
+}
+
+const CUTE_MOUTH =
+  '<path class="mouth" d="M21 40c6 8 16 8 22 0" fill="none" stroke="#111" stroke-width="2.6" stroke-linecap="round"/>';
+
+function cuteEyes(shape) {
+  const id = asShape(shape);
+  const y = PARALLEL_EYE_SHAPES.has(id) ? 24 : 27;
+  const tilt = PARALLEL_EYE_SHAPES.has(id) ? 14 : 10;
+  return `<g class="eyes">
+    <ellipse class="eye" cx="24" cy="${y}" rx="4" ry="5.4" fill="#111" transform="rotate(-${tilt} 24 ${y})"/>
+    <ellipse class="eye" cx="40" cy="${y}" rx="4" ry="5.4" fill="#111" transform="rotate(${tilt} 40 ${y})"/>
+  </g>`;
+}
+
+function parallelEyes() {
+  return `<g class="eyes">
+    <ellipse class="eye" cx="24" cy="28" rx="3.8" ry="5.2" fill="#111" transform="rotate(-16 24 28)"/>
+    <ellipse class="eye" cx="40" cy="28" rx="3.8" ry="5.2" fill="#111" transform="rotate(-16 40 28)"/>
+  </g>`;
+}
+
+function waitingEyes() {
+  return `<g class="eyes">
+    <rect class="eye" x="19" y="27" width="10" height="2.8" rx="1.4" fill="#111" transform="rotate(-6 24 28)"/>
+    <rect class="eye" x="35" y="27" width="10" height="2.8" rx="1.4" fill="#111" transform="rotate(-6 40 28)"/>
+  </g>`;
+}
+
+function doneEyes() {
+  return `<g class="eyes">
+    <ellipse class="eye" cx="24" cy="28" rx="3.2" ry="4.8" fill="#111"/>
+    <ellipse class="eye" cx="40" cy="28" rx="3.2" ry="4.8" fill="#111"/>
+  </g>`;
+}
+
+function officialEyes(shape) {
+  const id = asShape(shape);
+  if (PARALLEL_EYE_SHAPES.has(id)) {
+    return `<g class="eyes">
+      <path class="eye" d="M35 22l-6 5" fill="none" stroke="#111" stroke-width="3" stroke-linecap="round"/>
+      <path class="eye" d="M43 22l-6 5" fill="none" stroke="#111" stroke-width="3" stroke-linecap="round"/>
+    </g>`;
+  }
+  const shift = id === "pill" ? ' transform="translate(0,1)"' : "";
+  return `<g class="eyes"${shift}>
+    <path class="eye" d="M21 26l6 4" fill="none" stroke="#111" stroke-width="3" stroke-linecap="round"/>
+    <path class="eye" d="M37 30l6-4" fill="none" stroke="#111" stroke-width="3" stroke-linecap="round"/>
+  </g>`;
+}
+
+function officialEyesForState(shape, status) {
+  switch (statusClass(status)) {
+    case "working":
+      return parallelEyes();
+    case "waiting":
+    case "blocked":
+      return waitingEyes();
+    case "done":
+      return doneEyes();
+    case "thinking":
+    case "idle":
+    default:
+      return cuteEyes(shape);
+  }
+}
+
+function officialMouthForState(status) {
+  switch (statusClass(status)) {
+    case "waiting":
+    case "blocked":
+      return `<path class="mouth" d="M27 43h10" fill="none" stroke="#111" stroke-width="2.2" stroke-linecap="round"/>`;
+    default:
+      return CUTE_MOUTH;
+  }
+}
+
+function shapePreview(color, shape) {
+  const c = cssColor(color);
+  const clip = shapeClip(shape, c);
+  return `<svg viewBox="0 0 64 64" class="face" aria-hidden="true">
+    <defs>${clip.defs}</defs>
+    ${shapeBall(shape, c)}
+    <g class="features" clip-path="${clip.ref}"${featureTransformAttr(shape)}>${officialEyes(shape)}</g>
+  </svg>`;
+}
+
+function shapeBall(shape, color) {
+  const id = asShape(shape);
+  const c = color;
+  if (id === "circle") {
+    return `<circle class="ball" cx="32" cy="32" r="28" fill="${c}"/>`;
+  }
+  return `<path class="ball" d="${shapePath(id)}" fill="${c}"/>`;
+}
+
+function shapeClip(shape, color) {
+  const c = cssColor(color);
+  const clipId = `clip-${asShape(shape)}-${c.slice(1)}`;
+  const d = shapePath(shape);
+  const inner =
+    asShape(shape) === "circle"
+      ? `<circle cx="32" cy="32" r="28"/>`
+      : `<path d="${d}"/>`;
+  return { clipId, defs: `<clipPath id="${clipId}">${inner}</clipPath>`, ref: `url(#${clipId})` };
+}
+
+function faces(color, face, shape, life) {
+  const c = cssColor(color);
+  const id = asFace(face);
+  let eyes = cuteEyes(shape);
+  let mouth = CUTE_MOUTH;
+  switch (id) {
+    case "calm":
+      eyes = `<g class="eyes">
+        <rect class="eye" x="20" y="27" width="9" height="2.4" rx="1.2" fill="#111"/>
+        <rect class="eye" x="35" y="27" width="9" height="2.4" rx="1.2" fill="#111"/>
+      </g>`;
+      mouth = `<path class="mouth" d="M27 43h10" fill="none" stroke="#111" stroke-width="2.2" stroke-linecap="round"/>`;
+      break;
+    case "grin":
+      eyes = `<g class="eyes">
+        <ellipse class="eye" cx="24" cy="27" rx="4.6" ry="4.2" fill="#111"/>
+        <ellipse class="eye" cx="40" cy="27" rx="4.6" ry="4.2" fill="#111"/>
+      </g>`;
+      mouth = `<path class="mouth" d="M22 40c5 7 15 7 20 0" fill="none" stroke="#111" stroke-width="2.4" stroke-linecap="round"/>`;
+      break;
+    case "sleepy":
+      eyes = `<g class="eyes">
+        <path class="eye" d="M19 29c3-4 8-4 11 0" fill="none" stroke="#111" stroke-width="2.4" stroke-linecap="round"/>
+        <path class="eye" d="M34 29c3-4 8-4 11 0" fill="none" stroke="#111" stroke-width="2.4" stroke-linecap="round"/>
+      </g>`;
+      mouth = `<path class="mouth" d="M26 43c3 2 9 2 12 0" fill="none" stroke="#111" stroke-width="2.2" stroke-linecap="round"/>`;
+      break;
+    case "wink":
+      eyes = `<g class="eyes">
+        <path class="eye" d="M19 28h11" fill="none" stroke="#111" stroke-width="2.6" stroke-linecap="round"/>
+        <ellipse class="eye" cx="40" cy="28" rx="4.2" ry="5" fill="#111"/>
+      </g>`;
+      break;
+    case "wide":
+      eyes = `<g class="eyes">
+        <circle class="eye" cx="24" cy="28" r="6" fill="#111"/>
+        <circle class="eye" cx="40" cy="28" r="6" fill="#111"/>
+        <circle cx="25.5" cy="26.5" r="1.6" fill="#f4f4f5"/>
+        <circle cx="41.5" cy="26.5" r="1.6" fill="#f4f4f5"/>
+      </g>`;
+      mouth = `<ellipse class="mouth" cx="32" cy="44" rx="3.2" ry="2.4" fill="#111"/>`;
+      break;
+    case "glasses":
+      eyes = `<g class="eyes">
+        <ellipse class="eye" cx="23" cy="28" rx="3.4" ry="4" fill="#111"/>
+        <ellipse class="eye" cx="41" cy="28" rx="3.4" ry="4" fill="#111"/>
+        <circle cx="23" cy="28" r="8" fill="none" stroke="#111" stroke-width="2"/>
+        <circle cx="41" cy="28" r="8" fill="none" stroke="#111" stroke-width="2"/>
+        <path d="M31 28h2" stroke="#111" stroke-width="2" stroke-linecap="round"/>
+      </g>`;
+      break;
+    case "dots":
+      eyes = `<g class="eyes">
+        <circle class="eye" cx="24" cy="28" r="3.2" fill="#111"/>
+        <circle class="eye" cx="40" cy="28" r="3.2" fill="#111"/>
+      </g>`;
+      mouth = "";
+      break;
+    case "smile":
+      eyes = cuteEyes(shape);
+      break;
+    default:
+      break;
+  }
+  if (life) {
+    const st = statusClass(life);
+    if (st !== "idle") {
+      eyes = officialEyesForState(shape, st);
+      if (st === "waiting" || st === "blocked" || st === "done") {
+        mouth = officialMouthForState(st);
+      }
+    }
+  }
+  const clip = shapeClip(shape, c);
+  return `<svg viewBox="0 0 64 64" class="face" aria-hidden="true">
+    <defs>${clip.defs}</defs>
+    ${shapeBall(shape, c)}
+    <g class="features" clip-path="${clip.ref}"${featureTransformAttr(shape)}>${eyes}${mouth}</g>
+  </svg>`;
+}
 
 function defaultTimezone() {
   try {
@@ -19,6 +278,7 @@ function defaultTimezone() {
 }
 
 const defaultCfg = {
+  harness: "openai-compatible",
   provider: "openai-compatible",
   baseUrl: "https://api.deepseek.com/v1",
   apiKey: "",
@@ -46,11 +306,14 @@ let messages = [];
 let selected = "";
 let computer = "off";
 let cfg = { ...defaultCfg };
-let setPane = "models";
+let setPane = "harness";
 let query = "";
 let sending = false;
 let lastTool = "";
 let saveTimer = 0;
+let harnesses = [];
+let createLook = { color: BOT_COLORS[0], face: "smile", shape: "circle" };
+let groupPicks = new Set();
 
 function esc(s) {
   return String(s ?? "")
@@ -58,6 +321,53 @@ function esc(s) {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
+}
+
+function escapeRegExp(s) {
+  return String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function cssColor(c) {
+  const s = String(c ?? "");
+  return /^#[0-9A-Fa-f]{3,8}$/.test(s) ? s : "#7c5cff";
+}
+
+function mentionBots() {
+  return bots
+    .filter((b) => b.kind !== "group" && b.name)
+    .slice()
+    .sort((a, b) => b.name.length - a.name.length);
+}
+
+function mentionChip(bot, interactive) {
+  const name = esc(bot.name);
+  const color = cssColor(bot.color);
+  const label = esc(`Open ${bot.name}`);
+  if (interactive) {
+    return `<button type="button" class="mention" data-bot-id="${esc(bot.id)}" aria-label="${label}" style="--mention:${color}">@${name}</button>`;
+  }
+  return `<span class="mention" style="--mention:${color}">@${name}</span>`;
+}
+
+function linkMentions(html, opts = {}) {
+  const interactive = opts.interactive !== false;
+  const named = mentionBots();
+  if (!named.length) return html;
+  const chips = [];
+  let out = String(html ?? "");
+  for (const b of named) {
+    const re = new RegExp(`@${escapeRegExp(esc(b.name))}(?![\\w])`, "gi");
+    out = out.replace(re, (match, offset, str) => {
+      const before = str.slice(0, offset);
+      const lastLt = before.lastIndexOf("<");
+      const lastGt = before.lastIndexOf(">");
+      if (lastLt > lastGt) return match;
+      const i = chips.length;
+      chips.push(mentionChip(b, interactive));
+      return `\u0000M${i}\u0000`;
+    });
+  }
+  return out.replace(/\u0000M(\d+)\u0000/g, (_, i) => chips[Number(i)]);
 }
 
 function toast(msg) {
@@ -99,13 +409,34 @@ function statusClass(status) {
   }
 }
 
+function avatarMotionVars(seed) {
+  let h = 0;
+  for (const ch of String(seed ?? "0")) h = (Math.imul(31, h) + ch.charCodeAt(0)) >>> 0;
+  const delay = ((h % 6400) / 1000).toFixed(2);
+  const dur = (6.2 + ((h >>> 8) % 4200) / 1000).toFixed(2);
+  const mouthDelay = (((h >>> 4) % 5600) / 1000).toFixed(2);
+  const mouthDur = (5.2 + ((h >>> 12) % 3400) / 1000).toFixed(2);
+  return `--face-delay:${delay}s;--face-dur:${dur}s;--mouth-delay:${mouthDelay}s;--mouth-dur:${mouthDur}s`;
+}
+
+function faceShell(color, face, st, seed, shape) {
+  const motion = avatarMotionVars(seed);
+  const life = st !== "idle" ? st : undefined;
+  return `<div class="avatar ${st}" style="${motion}"><div class="head">${faces(color, face, shape, life)}</div></div>`;
+}
+
 function avatarEl(bot) {
-  if (!bot) return `<div class="avatar idle">${faces("#8e8e93")}</div>`;
+  if (!bot) return faceShell("#8e8e93", "smile", "idle", "default", "circle");
+  const st = statusClass(bot.status);
   if (bot.kind === "group") {
-    const colors = bot.memberColors?.length ? bot.memberColors : [bot.color];
-    return `<div class="stack">${colors.map((c) => `<div class="avatar idle">${faces(c)}</div>`).join("")}</div>`;
+    const members = (bot.members ?? []).map((id) => bots.find((b) => b.id === id)).filter(Boolean);
+    const shells = (members.length ? members : [{ id: bot.id, color: bot.color, face: bot.face, shape: bot.shape }]).map(
+      (m) =>
+        `<div class="avatar ${st}" style="${avatarMotionVars(m.id)}"><div class="head">${faces(m.color, m.face, m.shape, st !== "idle" ? st : undefined)}</div></div>`,
+    );
+    return `<div class="stack ${st}" style="${avatarMotionVars(bot.id)}">${shells.join("")}</div>`;
   }
-  return `<div class="avatar ${statusClass(bot.status)}">${faces(bot.color)}</div>`;
+  return faceShell(bot.color, bot.face, st, bot.id, bot.shape);
 }
 
 function currentBot() {
@@ -132,7 +463,7 @@ function renderRoster() {
               ? `<span class="attn unread"></span>`
               : ""
         }</div>
-        <div class="preview-line">${esc(b.preview || "")}</div>
+        <div class="preview-line">${linkMentions(esc(b.preview || ""), { interactive: false })}</div>
       </div>
       <div class="when">${esc(b.time || "")}</div>
     </button>`,
@@ -157,25 +488,70 @@ function bubbleHtml(text) {
     /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,
     '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>',
   );
-  const named = bots
-    .filter((b) => b.kind !== "group")
-    .slice()
-    .sort((a, b) => b.name.length - a.name.length);
-  for (const b of named) {
-    const re = new RegExp(`@${b.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "gi");
-    html = html.replace(re, `<span class="mention">@${esc(b.name)}</span>`);
-  }
+  html = linkMentions(html);
   html = html.replace(/\n/g, "<br>");
   return html.replace(/\u0000F(\d+)\u0000/g, (_, i) => fences[Number(i)]);
+}
+
+function looksLikeClientDump(s) {
+  const t = String(s ?? "");
+  return (
+    /try\s*\{\s*!function/.test(t) ||
+    /__webpack_require__|webpackBootstrap|webpackJsonp/.test(t) ||
+    /\/usr\/local\/Caskroom/.test(t) ||
+    /dist-package\/index\.js/.test(t) ||
+    (/Harness error:/i.test(t) && t.length > 240) ||
+    (t.length > 240 && /index\.js:\d+/.test(t))
+  );
+}
+
+function systemBubbleText(content) {
+  if (looksLikeClientDump(content)) {
+    return "This engine couldn’t run that turn. Check Harness, or switch engine.";
+  }
+  return String(content ?? "");
+}
+
+function parseRoutedHandoff(content) {
+  const t = String(content ?? "");
+  const m = t.match(/^\[(?:Handoff from|from) ([^\]]+)\]\s*([\s\S]*)$/i);
+  if (!m) return null;
+  return { from: m[1].trim(), body: (m[2] || "").trim() };
+}
+
+function renderIncomingHandoff(m, enter) {
+  const parsed = parseRoutedHandoff(m.content);
+  const fromBot =
+    (m.fromBotId && bots.find((b) => b.id === m.fromBotId)) ||
+    (parsed && bots.find((b) => b.kind !== "group" && b.name.toLowerCase() === parsed.from.toLowerCase()));
+  const fromName = fromBot?.name || parsed?.from || "teammate";
+  const body = parsed ? parsed.body : String(m.content ?? "");
+  const av = `<span class="handoff-av" aria-hidden="true">${faces(fromBot?.color || "#8e8e93", fromBot?.face, fromBot?.shape)}</span>`;
+  const who = fromBot
+    ? `<button type="button" class="handoff-who" data-bot-id="${esc(fromBot.id)}" aria-label="${esc(`Open ${fromName}`)}">${esc(fromName)}</button>`
+    : `<span class="handoff-who">${esc(fromName)}</span>`;
+  return `<div class="handoff-card${enter}">
+    ${av}
+    <div class="handoff-copy">
+      <div class="handoff-kicker">Handoff from ${who}</div>
+      ${body ? `<div class="handoff-body">${linkMentions(esc(body))}</div>` : ""}
+    </div>
+  </div>`;
 }
 
 function renderMessage(m, fresh) {
   const enter = fresh ? " fresh" : "";
   if (m.role === "tool") return "";
   const kind = m.kind || "text";
-  if (kind === "handoff") return `<div class="handoff${enter}">${esc(m.content)}</div>`;
-  if (kind === "routine") return `<div class="routine-chip${enter}">${esc(m.content)}</div>`;
-  if (kind === "system") return `<div class="sys${enter}">${esc(m.content)}</div>`;
+  const routed = parseRoutedHandoff(m.content);
+  if (m.role === "user" && (kind === "handoff" || routed)) {
+    return renderIncomingHandoff(m, enter);
+  }
+  if (kind === "handoff") return `<div class="handoff${enter}">${linkMentions(esc(m.content))}</div>`;
+  if (kind === "routine") return `<div class="routine-chip${enter}">${linkMentions(esc(m.content))}</div>`;
+  if (kind === "system" || looksLikeClientDump(m.content)) {
+    return `<div class="sys${enter}">${linkMentions(esc(systemBubbleText(m.content)))}</div>`;
+  }
   if (kind === "approval") {
     let title = "Allow this action?";
     let body = m.content;
@@ -196,8 +572,8 @@ function renderMessage(m, fresh) {
             ? "Denied. Nothing ran."
             : "";
     return `<div class="approval${done ? " done" : ""}${enter}" data-id="${esc(m.id)}">
-      <h3>${esc(title)}</h3>
-      <p>${esc(body)}</p>
+      <h3>${linkMentions(esc(title))}</h3>
+      <p>${linkMentions(esc(body))}</p>
       ${done ? `<p class="outcome">${esc(outcome)}</p>` : `<div class="actions">
         <button class="btn primary" data-act="allow">Allow once</button>
         <button class="btn ghost" data-act="always">Always allow</button>
@@ -208,7 +584,13 @@ function renderMessage(m, fresh) {
   if (m.role === "user") {
     return `<div class="msg user${enter}"><div class="bubble">${bubbleHtml(m.content)}</div></div>`;
   }
-  return `<div class="msg bot${enter}"><div class="bubble">${bubbleHtml(m.content)}</div></div>`;
+  const inGroup = currentBot()?.kind === "group";
+  const speaker = m.fromBotId ? bots.find((b) => b.id === m.fromBotId) : null;
+  const head =
+    inGroup && speaker
+      ? `<div class="msg-head"><span class="msg-av">${faces(speaker.color, speaker.face, speaker.shape)}</span><span class="msg-who">${esc(speaker.name)}</span></div>`
+      : "";
+  return `<div class="msg bot${enter}">${head}<div class="bubble">${bubbleHtml(m.content)}</div></div>`;
 }
 
 function renderTyping() {
@@ -274,6 +656,74 @@ function applyWallpaper() {
   const label = $("screenLabel");
   if (screen) screen.dataset.period = period;
   if (label) label.textContent = wallpaperCopy(period);
+}
+
+function appearanceMode() {
+  const mode = cfg.appearance;
+  if (mode === "light" || mode === "dark" || mode === "system") return mode;
+  return "dark";
+}
+
+function applyAppearance() {
+  document.documentElement.dataset.appearance = appearanceMode();
+}
+
+function onSystemAppearanceChange() {
+  if (appearanceMode() === "system") applyAppearance();
+}
+
+function watchSystemAppearance() {
+  const mq = window.matchMedia("(prefers-color-scheme: dark)");
+  if (mq.addEventListener) mq.addEventListener("change", onSystemAppearanceChange);
+  else mq.addListener(onSystemAppearanceChange);
+}
+
+const EXEC_MODES = {
+  ask: { label: "Ask" },
+  auto: { label: "Auto" },
+  all: { label: "Allow all" },
+};
+
+function composerExecMode() {
+  if (cfg.localExec === "always" && cfg.requireSend === "off") return "all";
+  if (cfg.localExec === "always") return "auto";
+  return "ask";
+}
+
+function closeExecMenu() {
+  $("execWrap")?.classList.remove("open");
+  $("execBtn")?.setAttribute("aria-expanded", "false");
+  const menu = $("execMenu");
+  if (menu) menu.hidden = true;
+}
+
+function renderComposerExec() {
+  const mode = composerExecMode();
+  const btn = $("execBtn");
+  if (btn) btn.textContent = EXEC_MODES[mode].label;
+  document.querySelectorAll("#execMenu [data-exec]").forEach((el) => {
+    const on = el.dataset.exec === mode;
+    el.classList.toggle("on", on);
+    el.setAttribute("aria-checked", on ? "true" : "false");
+  });
+}
+
+function setComposerExec(mode) {
+  if (mode === "ask") {
+    cfg.localExec = "ask";
+  } else if (mode === "auto") {
+    cfg.localExec = "always";
+    cfg.requireSend = "on";
+  } else if (mode === "all") {
+    cfg.localExec = "always";
+    cfg.requireSend = "off";
+  } else {
+    return;
+  }
+  saveCfg();
+  renderComposerExec();
+  closeExecMenu();
+  if (setPane === "permissions" && $("settings")?.classList.contains("show")) renderSettings();
 }
 
 function syncSendBtn() {
@@ -376,6 +826,117 @@ function toggleAcctPop() {
   else openAcctPop();
 }
 
+function nextLookDefaults() {
+  const usedC = new Set(bots.map((b) => String(b.color || "").toLowerCase()));
+  const usedF = new Set(bots.map((b) => asFace(b.face)));
+  const usedS = new Set(bots.map((b) => asShape(b.shape)));
+  return {
+    color: BOT_COLORS.find((c) => !usedC.has(c.toLowerCase())) || BOT_COLORS[bots.length % BOT_COLORS.length],
+    face: FACE_IDS.find((f) => !usedF.has(f)) || FACE_IDS[bots.length % FACE_IDS.length],
+    shape: SHAPE_IDS.find((s) => !usedS.has(s)) || SHAPE_IDS[bots.length % SHAPE_IDS.length],
+  };
+}
+
+function closePlusMenu() {
+  $("plusMenu")?.setAttribute("hidden", "");
+  $("plusWrap")?.classList.remove("open");
+  $("newBtn")?.setAttribute("aria-expanded", "false");
+}
+
+function plusMenuOpen() {
+  return Boolean($("plusWrap")?.classList.contains("open"));
+}
+
+function showSheet(id) {
+  for (const sid of ["sheetBot", "sheetConvo", "sheetGroup"]) {
+    const el = $(sid);
+    if (el) el.hidden = sid !== id;
+  }
+  $("modal").classList.add("show");
+}
+
+function closeCreate() {
+  $("modal").classList.remove("show");
+}
+
+function renderBotLooks() {
+  const prev = $("createPreview");
+  if (prev) prev.innerHTML = faceShell(createLook.color, createLook.face, "idle", "preview", createLook.shape);
+  const sw = $("botSwatches");
+  if (sw) {
+    sw.innerHTML = BOT_COLORS.map(
+      (c) =>
+        `<button type="button" class="swatch${c.toLowerCase() === createLook.color.toLowerCase() ? " on" : ""}" data-color="${esc(c)}" style="background:${esc(c)}" aria-label="Color ${c}"></button>`,
+    ).join("");
+  }
+  const sp = $("shapePick");
+  if (sp) {
+    sp.innerHTML = SHAPE_IDS.map(
+      (id) =>
+        `<button type="button" class="${id === createLook.shape ? "on" : ""}" data-shape="${id}" aria-label="${esc(SHAPE_LABELS[id] || id)}">
+          <span class="look">${shapePreview(createLook.color, id)}</span>
+        </button>`,
+    ).join("");
+  }
+  const fp = $("facePick");
+  if (fp) {
+    fp.innerHTML = FACE_IDS.map(
+      (id) =>
+        `<button type="button" class="${id === createLook.face ? "on" : ""}" data-face="${id}" aria-label="${id} expression">
+          <span class="look">${faces(createLook.color, id, createLook.shape)}</span>
+        </button>`,
+    ).join("");
+  }
+}
+
+function openNewBot() {
+  closePlusMenu();
+  createLook = nextLookDefaults();
+  renderBotLooks();
+  showSheet("sheetBot");
+}
+
+function renderConvoList() {
+  const list = $("convoList");
+  if (!list) return;
+  const rows = bots.filter((b) => b.kind !== "group");
+  list.innerHTML = rows
+    .map(
+      (b) => `<button type="button" class="pick-row" data-id="${esc(b.id)}">
+        <span class="look">${faces(b.color, b.face, b.shape)}</span>
+        <span><span class="who">${esc(b.name)}</span><span class="job">${esc(b.title)}</span></span>
+      </button>`,
+    )
+    .join("");
+}
+
+function openNewConvo() {
+  closePlusMenu();
+  renderConvoList();
+  showSheet("sheetConvo");
+}
+
+function renderGroupMembers() {
+  const box = $("gMembers");
+  if (!box) return;
+  const rows = bots.filter((b) => b.kind !== "group");
+  box.innerHTML = rows
+    .map(
+      (b) => `<button type="button" class="${groupPicks.has(b.id) ? "on" : ""}" data-id="${esc(b.id)}">
+        <span class="look">${faces(b.color, b.face, b.shape)}</span>
+        ${esc(b.name)}
+      </button>`,
+    )
+    .join("");
+}
+
+function openNewGroup() {
+  closePlusMenu();
+  groupPicks = new Set();
+  renderGroupMembers();
+  showSheet("sheetGroup");
+}
+
 function applyChrome() {
   const app = $("app");
   app.classList.toggle("preview", computer === "preview");
@@ -423,6 +984,8 @@ function bindSeg(name, key) {
         cfg.baseUrl = "https://api.deepseek.com/v1";
         cfg.model = cfg.model || "deepseek-chat";
       }
+      if (key === "appearance") applyAppearance();
+      if (key === "localExec") renderComposerExec();
       saveCfg();
       renderSettings();
     };
@@ -431,8 +994,8 @@ function bindSeg(name, key) {
 
 function renderSettings() {
   const titles = {
-    models: "Models",
     harness: "Harness",
+    models: "Models",
     permissions: "Permissions",
     agent: "Agent",
     approvals: "Approvals",
@@ -445,7 +1008,9 @@ function renderSettings() {
   const body = $("setBody");
   if (setPane === "models") {
     body.innerHTML = `
-      <div class="warn-line">Official Grok Bot picks the model for you. This build has no bundled quota — bring any OpenAI-compatible API.</div>
+      ${cfg.harness === "codex" || cfg.harness === "cursor" || cfg.harness === "dsh"
+        ? `<p class="set-caption">This page is for HTTP engines. Switch Harness to OpenAI compatible or Ollama to edit Base URL and key.</p>`
+        : ""}
       <div class="field">
         <label>Provider</label>
         <div class="seg">
@@ -515,29 +1080,104 @@ function renderSettings() {
     };
   }
   if (setPane === "harness") {
+    const active = cfg.harness || "openai-compatible";
+    const names = {
+      "openai-compatible": "OpenAI compatible",
+      ollama: "Ollama",
+      codex: "Codex",
+      cursor: "Cursor",
+      dsh: "DeepSeek Harness",
+    };
+    const blurbs = {
+      "openai-compatible": "Any OpenAI-compatible HTTP API.",
+      ollama: "Local models on this machine.",
+      codex: "Uses the Codex CLI login on this Mac.",
+      cursor: "Uses cursor-agent and the login on this Mac.",
+      dsh: "DeepSeek’s dsh CLI in the shared workspace.",
+    };
+    const rows = (harnesses.length ? harnesses : [{
+      id: "openai-compatible",
+      label: "OpenAI compatible",
+      blurb: "",
+      ready: true,
+      install: { command: "", hint: "" },
+    }]).map((h) => {
+      const on = h.id === active;
+      const missing = !h.ready;
+      const ver = String(h.version || "")
+        .replace(/^ollama version is /i, "")
+        .replace(/^codex-cli /i, "")
+        .replace(/^dsh\s+/i, "")
+        .trim();
+      const meta = missing ? "Install" : on ? "On" : ver;
+      const blurb = on ? (blurbs[h.id] || h.blurb || "") : "";
+      const install = missing
+        ? `<div class="install" data-stop="1">
+            <code>${esc(h.install?.command || "")}</code>
+            <div class="actions">
+              <button type="button" class="btn ghost" data-copy="${esc(h.install?.command || "")}">Copy</button>
+            </div>
+          </div>`
+        : "";
+      return `<div class="hrow${on ? " on" : ""}${missing ? " missing" : ""}" data-harness="${esc(h.id)}" role="radio" aria-checked="${on ? "true" : "false"}">
+        <span class="hdot" aria-hidden="true"></span>
+        <span>
+          <span class="name">${esc(names[h.id] || h.label)}</span>
+          ${blurb ? `<div class="sub">${esc(blurb)}</div>` : ""}
+        </span>
+        <span class="meta">${esc(meta)}</span>
+        ${install}
+      </div>`;
+    }).join("");
     body.innerHTML = `
+      <p class="set-caption">One engine for every Bot. Local CLIs use the login already on this machine.</p>
+      <div class="hlist" role="radiogroup" aria-label="Harness">${rows}</div>
       <div class="field">
         <label>Workspace</label>
         <input id="f-ws" value="${esc(cfg.workspace)}" />
-        <div class="hint">Analogue of official /workspace. Every Bot shares this folder — not one disk per Bot.</div>
       </div>
       <div class="field">
-        <label>Memory directory</label>
+        <label>Memory</label>
         <input id="f-mem" value="${esc(cfg.memoryDir)}" />
-        <div class="hint">One subdirectory per Bot id. Memory is bound to the role, not a single session.</div>
       </div>
-      <div class="field">
-        <label>DeepSeek Harness profile</label>
+      ${
+        active === "dsh"
+          ? `<div class="field">
+        <label>dsh profile</label>
         <div class="seg">
           <button data-seg="dshProfile" data-val="headless">headless</button>
           <button data-seg="dshProfile" data-val="web">web</button>
           <button data-seg="dshProfile" data-val="sdk">sdk</button>
         </div>
-        <div class="hint">v0.1 uses the built-in OpenAI-compatible loop. dsh can be wired later; this UI is not the dsh Web UI.</div>
-      </div>
+      </div>`
+          : ""
+      }
     `;
     bindFields({ "f-ws": "workspace", "f-mem": "memoryDir" });
-    bindSeg("dshProfile", "dshProfile");
+    if (active === "dsh") bindSeg("dshProfile", "dshProfile");
+    body.querySelectorAll("[data-harness]").forEach((card) => {
+      card.addEventListener("click", (ev) => {
+        if (ev.target.closest("[data-stop]")) return;
+        const id = card.dataset.harness;
+        const row = harnesses.find((h) => h.id === id);
+        if (row && !row.ready) {
+          toast(`${row.label} is not installed`);
+          return;
+        }
+        switchHarness(id);
+      });
+    });
+    body.querySelectorAll("[data-copy]").forEach((btn) => {
+      btn.addEventListener("click", async (ev) => {
+        ev.stopPropagation();
+        try {
+          await navigator.clipboard.writeText(btn.dataset.copy || "");
+          toast("Install command copied");
+        } catch {
+          toast(btn.dataset.copy || "Copy failed");
+        }
+      });
+    });
   }
   if (setPane === "permissions") {
     body.innerHTML = `
@@ -574,9 +1214,19 @@ function renderSettings() {
         </div>
         <div class="hint">Official cloud computers keep running with the lid closed. A sleeping laptop still stops. v0.1 does not install launchd.</div>
       </div>
+      <div class="field roster-zone">
+        <label>Roster</label>
+        <div class="hint">Bots, chats, and per-Bot memory live under ~/.opengrokbot/. Model and Harness settings are kept.</div>
+        <div class="actions" style="margin-top:10px">
+          <button type="button" class="btn ghost" id="clearRoster">Clear roster</button>
+          <button type="button" class="btn danger" id="resetRoster">Reset to starter roster</button>
+        </div>
+      </div>
     `;
     bindFields({ "f-tz": "timezone" });
     bindSeg("scheduler", "scheduler");
+    $("clearRoster")?.addEventListener("click", () => void clearRosterAction());
+    $("resetRoster")?.addEventListener("click", () => void resetRosterAction());
   }
   if (setPane === "approvals") {
     body.innerHTML = `
@@ -623,7 +1273,6 @@ function renderSettings() {
           <button data-seg="appearance" data-val="light">Light</button>
           <button data-seg="appearance" data-val="dark">Dark</button>
         </div>
-        <div class="hint">Official has three options. v0.1 ships Dark only, matching the desktop marketing shots.</div>
       </div>
     `;
     bindFields({ "f-profile": "profileName" });
@@ -639,12 +1288,47 @@ function renderSettings() {
   }
 }
 
-function openSettings(pane) {
+async function refreshHarnesses() {
+  const data = await api("/api/harnesses");
+  harnesses = data.harnesses || [];
+  if (data.active) cfg.harness = data.active;
+}
+
+async function switchHarness(id) {
+  try {
+    const data = await api("/api/harnesses/switch", {
+      method: "POST",
+      body: JSON.stringify({ id }),
+    });
+    if (data.settings) cfg = { ...cfg, ...data.settings };
+    cfg.harness = data.active || id;
+    toast(`Using ${harnesses.find((h) => h.id === id)?.label || id}`);
+    await refreshHarnesses();
+    renderSettings();
+    renderAccount();
+  } catch (err) {
+    toast(err.message || "Could not switch harness");
+    try {
+      await refreshHarnesses();
+      renderSettings();
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+async function openSettings(pane) {
   closeAcctPop();
-  setPane = pane || "models";
+  closeExecMenu();
+  setPane = pane || "harness";
   $("settings").classList.add("show");
   $("settings").setAttribute("aria-hidden", "false");
   $("modal").classList.remove("show");
+  try {
+    await refreshHarnesses();
+  } catch {
+    harnesses = [];
+  }
   renderSettings();
 }
 
@@ -656,9 +1340,30 @@ function closeSettings() {
 async function loadRoster() {
   const data = await api("/api/bots");
   bots = data.bots || [];
+  if (!bots.length) {
+    selected = "";
+    messages = [];
+    renderRoster();
+    renderEmptyChat();
+    return;
+  }
   if (!selected && bots[0]) selected = bots[0].id;
   if (selected && !bots.some((b) => b.id === selected) && bots[0]) selected = bots[0].id;
   renderRoster();
+  if (selected) await loadMessages();
+  else renderEmptyChat();
+}
+
+function renderEmptyChat() {
+  $("headAv").innerHTML = "";
+  $("headName").textContent = "No Bots yet";
+  $("headSub").textContent = "Press + to build your roster";
+  $("elapsed").textContent = "";
+  $("input").placeholder = "Create a Bot first";
+  $("thread").innerHTML =
+    `<div class="sys">Your roster is empty. Use + to create Bots, or Settings → Agent → Reset to starter roster.</div>`;
+  $("routines").innerHTML = `<h4>ROUTINES</h4><div class="rt"><span class="n">No Bots</span><span>—</span></div>`;
+  syncSendBtn();
 }
 
 async function loadMessages() {
@@ -669,10 +1374,56 @@ async function loadMessages() {
 }
 
 async function selectBot(id) {
+  if (!id) {
+    selected = "";
+    messages = [];
+    renderRoster();
+    renderEmptyChat();
+    return;
+  }
   selected = id;
   sending = false;
   renderRoster();
   await loadMessages();
+}
+
+async function clearRosterAction() {
+  if (
+    !confirm(
+      "Clear the entire roster?\n\nThis deletes all Bots, chat history, and per-Bot memory on this machine. Your model and Harness settings stay.",
+    )
+  ) {
+    return;
+  }
+  try {
+    await api("/api/roster/clear", { method: "POST", body: "{}" });
+    closeSettings();
+    await loadRoster();
+    toast("Roster cleared");
+  } catch (err) {
+    toast(err.message);
+  }
+}
+
+async function resetRosterAction() {
+  if (
+    !confirm(
+      "Reset to the starter roster?\n\nChief, Sales, Inbox, and the other demo Bots come back with fresh chats. Your custom Bots and their memory are removed.",
+    )
+  ) {
+    return;
+  }
+  try {
+    const data = await api("/api/roster/reset", { method: "POST", body: "{}" });
+    bots = data.bots || [];
+    selected = bots[0]?.id || "";
+    closeSettings();
+    await loadRoster();
+    if (selected) await selectBot(selected);
+    toast("Starter roster restored");
+  } catch (err) {
+    toast(err.message);
+  }
 }
 
 function applyEvent(event) {
@@ -709,12 +1460,22 @@ function applyEvent(event) {
   if (event.type === "done") {
     sending = false;
     const bot = bots.find((b) => b.id === event.botId);
-    if (bot && (bot.status === "thinking" || bot.status === "working")) {
-      bot.status = "idle";
+    if (bot && (bot.status === "thinking" || bot.status === "working" || bot.status === "waiting")) {
+      bot.status = "done";
       bot.action = "Idle";
+      renderRoster();
+      if (event.botId === selected) renderChat();
+      window.setTimeout(() => {
+        if (bot.status === "done") {
+          bot.status = "idle";
+          renderRoster();
+          if (event.botId === selected) renderChat();
+        }
+      }, 1400);
+    } else {
+      renderRoster();
+      if (event.botId === selected) renderChat();
     }
-    renderRoster();
-    renderChat();
     syncSendBtn();
     loadRoster().catch(() => undefined);
   }
@@ -799,13 +1560,36 @@ function bindUi() {
     computer = "preview";
     applyChrome();
   });
-  $("newBtn").addEventListener("click", () => $("modal").classList.add("show"));
+  $("newBtn").addEventListener("click", (e) => {
+    e.stopPropagation();
+    closeAcctPop();
+    closeExecMenu();
+    if (plusMenuOpen()) {
+      closePlusMenu();
+      return;
+    }
+    $("plusWrap")?.classList.add("open");
+    $("plusMenu")?.removeAttribute("hidden");
+    $("newBtn")?.setAttribute("aria-expanded", "true");
+  });
+  $("plusMenu")?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const item = e.target.closest("[data-create]");
+    if (!item) return;
+    const kind = item.dataset.create;
+    if (kind === "bot") openNewBot();
+    else if (kind === "convo") openNewConvo();
+    else if (kind === "group") openNewGroup();
+  });
   $("setBtn").addEventListener("click", () => {
     closeAcctPop();
-    openSettings("models");
+    closePlusMenu();
+    openSettings("harness");
   });
   $("acctBtn").addEventListener("click", (e) => {
     e.stopPropagation();
+    closeExecMenu();
+    closePlusMenu();
     toggleAcctPop();
   });
   $("acctPop").addEventListener("click", (e) => {
@@ -815,7 +1599,7 @@ function bindUi() {
     const act = item.dataset.acct;
     if (act === "settings") {
       closeAcctPop();
-      openSettings("models");
+      openSettings("harness");
       return;
     }
     if (act === "appearance") {
@@ -832,7 +1616,11 @@ function bindUi() {
       showAcctMenu();
     }
   });
-  document.addEventListener("click", () => closeAcctPop());
+  document.addEventListener("click", () => {
+    closeAcctPop();
+    closeExecMenu();
+    closePlusMenu();
+  });
   window.addEventListener("resize", () => {
     if (acctPopOpen()) placeAcctPop();
   });
@@ -846,7 +1634,47 @@ function bindUi() {
   $("settings").addEventListener("click", (e) => {
     if (e.target.id === "settings") closeSettings();
   });
-  $("cancelNew").addEventListener("click", () => $("modal").classList.remove("show"));
+  $("cancelNew").addEventListener("click", closeCreate);
+  $("cancelConvo")?.addEventListener("click", closeCreate);
+  $("cancelGroup")?.addEventListener("click", closeCreate);
+  $("botSwatches")?.addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-color]");
+    if (!btn) return;
+    createLook.color = btn.dataset.color;
+    renderBotLooks();
+  });
+  $("shapePick")?.addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-shape]");
+    if (!btn) return;
+    createLook.shape = asShape(btn.dataset.shape);
+    renderBotLooks();
+  });
+  $("facePick")?.addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-face]");
+    if (!btn) return;
+    createLook.face = asFace(btn.dataset.face);
+    renderBotLooks();
+  });
+  $("convoList")?.addEventListener("click", (e) => {
+    const row = e.target.closest("[data-id]");
+    if (!row) return;
+    closeCreate();
+    selectBot(row.dataset.id);
+  });
+  $("gMembers")?.addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-id]");
+    if (!btn) return;
+    const id = btn.dataset.id;
+    if (groupPicks.has(id)) groupPicks.delete(id);
+    else {
+      if (groupPicks.size >= 6) {
+        toast("Groups cap at six Bots.");
+        return;
+      }
+      groupPicks.add(id);
+    }
+    renderGroupMembers();
+  });
   $("saveNew").addEventListener("click", async () => {
     try {
       const bot = await api("/api/bots", {
@@ -855,9 +1683,32 @@ function bindUi() {
           name: $("nName").value,
           title: $("nTitle").value,
           description: $("nDesc").value,
+          color: createLook.color,
+          face: createLook.face,
+          shape: createLook.shape,
         }),
       });
-      $("modal").classList.remove("show");
+      closeCreate();
+      await loadRoster();
+      await selectBot(bot.id);
+    } catch (err) {
+      toast(err.message);
+    }
+  });
+  $("saveGroup")?.addEventListener("click", async () => {
+    try {
+      const name = ($("gName")?.value || "").trim() || "Group";
+      const bot = await api("/api/bots", {
+        method: "POST",
+        body: JSON.stringify({
+          name,
+          title: `Group · ${groupPicks.size} Bots`,
+          description: "Group thread. @ a name or let the router hand off with message_bot.",
+          kind: "group",
+          members: [...groupPicks],
+        }),
+      });
+      closeCreate();
       await loadRoster();
       await selectBot(bot.id);
     } catch (err) {
@@ -865,6 +1716,13 @@ function bindUi() {
     }
   });
   $("thread").addEventListener("click", async (e) => {
+    const jump = e.target.closest("button[data-bot-id]");
+    if (jump) {
+      e.preventDefault();
+      const id = jump.dataset.botId;
+      if (id) selectBot(id);
+      return;
+    }
     const btn = e.target.closest("button[data-act]");
     if (!btn || !selected) return;
     const box = btn.closest(".approval");
@@ -926,7 +1784,7 @@ function bindUi() {
     picker.innerHTML = pickerItems
       .map(
         (b, i) => `<button type="button" data-name="${esc(b.name)}" class="${i === pickerIndex ? "active" : ""}">
-          <span class="avatar tiny">${faces(b.color)}</span>
+          <span class="avatar tiny">${faces(b.color, b.face, b.shape)}</span>
           <span><span class="who">${esc(b.name)}</span><div class="job">${esc(b.title)}</div></span>
         </button>`,
       )
@@ -1021,6 +1879,26 @@ function bindUi() {
     }
   });
 
+  $("execBtn").addEventListener("click", (e) => {
+    e.stopPropagation();
+    closeAcctPop();
+    const wrap = $("execWrap");
+    const open = wrap?.classList.contains("open");
+    if (open) {
+      closeExecMenu();
+      return;
+    }
+    wrap.classList.add("open");
+    $("execBtn").setAttribute("aria-expanded", "true");
+    $("execMenu").hidden = false;
+  });
+  $("execMenu").addEventListener("click", (e) => {
+    e.stopPropagation();
+    const item = e.target.closest("[data-exec]");
+    if (!item) return;
+    setComposerExec(item.dataset.exec);
+  });
+
   $("composerForm").addEventListener("submit", (e) => {
     e.preventDefault();
     if (composing) return;
@@ -1035,19 +1913,30 @@ function bindUi() {
   document.addEventListener("keydown", (e) => {
     if ((e.metaKey || e.ctrlKey) && e.key === ",") {
       e.preventDefault();
-      openSettings("models");
+      openSettings("harness");
     }
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "n") {
       e.preventDefault();
-      $("modal").classList.add("show");
+      closeAcctPop();
+      closeExecMenu();
+      if (plusMenuOpen()) closePlusMenu();
+      else $("newBtn")?.click();
     }
     if (e.key === "Escape") {
+      if (plusMenuOpen()) {
+        closePlusMenu();
+        return;
+      }
       if (acctPopOpen()) {
         closeAcctPop();
         return;
       }
+      if ($("execWrap")?.classList.contains("open")) {
+        closeExecMenu();
+        return;
+      }
       closeSettings();
-      $("modal").classList.remove("show");
+      closeCreate();
       $("picker")?.classList.remove("show");
     }
   });
@@ -1055,6 +1944,7 @@ function bindUi() {
 
 async function boot() {
   bindUi();
+  watchSystemAppearance();
   const mac = /Mac|iPhone|iPad/.test(navigator.platform);
   if ($("acctSetKbd")) $("acctSetKbd").textContent = mac ? "⌘," : "Ctrl+,";
   applyChrome();
@@ -1063,6 +1953,8 @@ async function boot() {
   } catch {
     cfg = { ...defaultCfg };
   }
+  applyAppearance();
+  renderComposerExec();
   renderAccount();
   await loadRoster();
   await loadMessages();

@@ -2,6 +2,8 @@ id: inbox
 name: Inbox Manager
 title: Inbox
 color: "#4A6FA5"
+shape: squircle
+face: calm
 kind: bot
 description: >
   You triage the user's inbox. Classify, draft, and park. Never send a

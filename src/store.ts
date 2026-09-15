@@ -1,4 +1,4 @@
-import { mkdir, readdir, readFile, writeFile, copyFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, writeFile, copyFile, unlink, rm } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { userInfo } from "node:os";
 import { join } from "node:path";
@@ -13,8 +13,39 @@ import {
   type Settings,
 } from "./types.js";
 import { ensureHome, expandHome, homeDir, SEED_BOTS_DIR } from "./paths.js";
+import { parseHarnessId } from "./harness.js";
 
-const PALETTE = ["#5EC8B5", "#F5A54A", "#4A6FA5", "#8B6CF7", "#3D8BFF", "#E07A3D", "#c9a227"];
+const PALETTE = [
+  "#5EC8B5",
+  "#F5A54A",
+  "#4A6FA5",
+  "#8B6CF7",
+  "#3D8BFF",
+  "#E07A3D",
+  "#E8B86D",
+  "#6BA368",
+  "#D46A8A",
+  "#C9A227",
+  "#5B8C7A",
+  "#C47A5A",
+];
+const FACE_IDS = ["smile", "calm", "grin", "sleepy", "wink", "wide", "glasses", "dots"];
+const SHAPE_IDS = ["circle", "oval", "squircle", "pill", "triangle", "hexagon", "cloud", "teardrop"];
+
+function asFace(value: unknown): string {
+  const id = String(value ?? "smile");
+  return FACE_IDS.includes(id) ? id : "smile";
+}
+
+function asShape(value: unknown): string {
+  const id = String(value ?? "circle");
+  return SHAPE_IDS.includes(id) ? id : "circle";
+}
+
+function asColor(value: unknown, fallback: string): string {
+  const s = String(value ?? "");
+  return /^#[0-9A-Fa-f]{3,8}$/.test(s) ? s : fallback;
+}
 
 function defaultTimezone(): string {
   try {
@@ -35,6 +66,7 @@ function defaultProfileName(): string {
 }
 
 export const DEFAULT_SETTINGS: Settings = {
+  harness: "openai-compatible",
   provider: "openai-compatible",
   baseUrl: "https://api.deepseek.com/v1",
   apiKey: "",
@@ -81,6 +113,10 @@ function transcriptPath(botId: string): string {
   return join(homeDir(), "transcripts", `${botId}.json`);
 }
 
+function emptyRosterMarker(): string {
+  return join(homeDir(), ".empty-roster");
+}
+
 export async function loadSettings(): Promise<Settings> {
   await ensureHome();
   if (!existsSync(settingsPath())) {
@@ -88,6 +124,9 @@ export async function loadSettings(): Promise<Settings> {
   }
   const raw = JSON.parse(await readFile(settingsPath(), "utf8")) as Partial<Settings>;
   const merged = { ...DEFAULT_SETTINGS, ...raw };
+  if (!parseHarnessId(raw.harness) && (merged.baseUrl ?? "").includes("11434")) {
+    merged.harness = "ollama";
+  }
   if (typeof raw.profileName !== "string" || !raw.profileName.trim()) {
     merged.profileName = defaultProfileName();
   }
@@ -114,7 +153,9 @@ function parseBot(raw: unknown, fallbackId: string): Bot {
     id: String(rec.id ?? fallbackId),
     name: String(rec.name ?? fallbackId),
     title: String(rec.title ?? rec.name ?? fallbackId),
-    color: String(rec.color ?? PALETTE[0]),
+    color: asColor(rec.color, PALETTE[0]),
+    face: asFace(rec.face),
+    shape: asShape(rec.shape),
     description: String(rec.description ?? ""),
     kind: asKind(rec.kind),
     members: Array.isArray(rec.members) ? rec.members.map(String) : undefined,
@@ -132,39 +173,7 @@ function parseBot(raw: unknown, fallbackId: string): Bot {
   };
 }
 
-export async function seedIfNeeded(): Promise<void> {
-  await ensureHome();
-  const dir = botsDir();
-  const existing = (await readdir(dir)).filter((f) => f.endsWith(".yaml") || f.endsWith(".yml"));
-  if (existing.length > 0) return;
-  if (!existsSync(SEED_BOTS_DIR)) return;
-  const seeds = (await readdir(SEED_BOTS_DIR)).filter((f) => f.endsWith(".yaml") || f.endsWith(".yml"));
-  for (const file of seeds) {
-    await copyFile(join(SEED_BOTS_DIR, file), join(dir, file));
-  }
-  const settings = await loadSettings();
-  await mkdir(expandHome(settings.workspace), { recursive: true });
-  await mkdir(expandHome(settings.memoryDir), { recursive: true });
-  const seeded = await listBots();
-  for (const bot of seeded) {
-    const existing = await loadTranscript(bot.id);
-    if (existing.length > 0) continue;
-    const hello =
-      bot.kind === "group"
-        ? `Group · ${(bot.members ?? []).join(", ")} · ready when you are.`
-        : `Hey — I'm ${bot.name}. ${bot.title}. What do you want me around for?`;
-    await appendMessage(bot.id, {
-      id: randomUUID(),
-      role: "assistant",
-      content: hello,
-      createdAt: new Date().toISOString(),
-      kind: bot.kind === "group" ? "system" : "text",
-    });
-  }
-}
-
-export async function listBots(): Promise<Bot[]> {
-  await seedIfNeeded();
+async function listBotsRaw(): Promise<Bot[]> {
   const files = (await readdir(botsDir())).filter((f) => f.endsWith(".yaml") || f.endsWith(".yml"));
   const bots: Bot[] = [];
   for (const file of files) {
@@ -181,6 +190,94 @@ export async function listBots(): Promise<Bot[]> {
     return ia - ib;
   });
   return bots;
+}
+
+async function greetSeededBots(bots: Bot[]): Promise<void> {
+  for (const bot of bots) {
+    const existing = await loadTranscript(bot.id);
+    if (existing.length > 0) continue;
+    const hello =
+      bot.kind === "group"
+        ? `Group · ${(bot.members ?? []).join(", ")} · ready when you are.`
+        : `Hey — I'm ${bot.name}. ${bot.title}. What do you want me around for?`;
+    await appendMessage(bot.id, {
+      id: randomUUID(),
+      role: "assistant",
+      content: hello,
+      createdAt: new Date().toISOString(),
+      kind: bot.kind === "group" ? "system" : "text",
+    });
+  }
+}
+
+async function applySeedBots(): Promise<Bot[]> {
+  await ensureHome();
+  const dir = botsDir();
+  if (!existsSync(SEED_BOTS_DIR)) return [];
+  const seeds = (await readdir(SEED_BOTS_DIR)).filter((f) => f.endsWith(".yaml") || f.endsWith(".yml"));
+  for (const file of seeds) {
+    await copyFile(join(SEED_BOTS_DIR, file), join(dir, file));
+  }
+  const settings = await loadSettings();
+  await mkdir(expandHome(settings.workspace), { recursive: true });
+  await mkdir(expandHome(settings.memoryDir), { recursive: true });
+  const bots = await listBotsRaw();
+  await greetSeededBots(bots);
+  return bots;
+}
+
+export async function seedIfNeeded(): Promise<void> {
+  await ensureHome();
+  const dir = botsDir();
+  const existing = (await readdir(dir)).filter((f) => f.endsWith(".yaml") || f.endsWith(".yml"));
+  if (existing.length > 0) return;
+  if (existsSync(emptyRosterMarker())) return;
+  await applySeedBots();
+}
+
+export async function listBots(): Promise<Bot[]> {
+  await seedIfNeeded();
+  return listBotsRaw();
+}
+
+async function deleteAllRosterData(): Promise<string[]> {
+  await ensureHome();
+  const dir = botsDir();
+  const files = (await readdir(dir)).filter((f) => f.endsWith(".yaml") || f.endsWith(".yml"));
+  const ids = files.map((f) => f.replace(/\.ya?ml$/, ""));
+  for (const file of files) {
+    await unlink(join(dir, file));
+  }
+  for (const id of ids) {
+    const tp = transcriptPath(id);
+    if (existsSync(tp)) await unlink(tp);
+    live.delete(id);
+  }
+  const settings = await loadSettings();
+  const memRoot = expandHome(settings.memoryDir);
+  if (existsSync(memRoot)) {
+    const memEntries = await readdir(memRoot, { withFileTypes: true });
+    for (const entry of memEntries) {
+      if (!entry.isDirectory()) continue;
+      if (ids.includes(entry.name)) {
+        await rm(join(memRoot, entry.name), { recursive: true, force: true });
+      }
+    }
+  }
+  return ids;
+}
+
+/** Remove every Bot, chat, and per-Bot memory. Leaves an empty roster until you create new Bots. */
+export async function clearRoster(): Promise<void> {
+  await deleteAllRosterData();
+  await writeFile(emptyRosterMarker(), new Date().toISOString());
+}
+
+/** Restore the demo roster from data/bots with fresh chats. */
+export async function resetRosterToSeed(): Promise<Bot[]> {
+  await deleteAllRosterData();
+  if (existsSync(emptyRosterMarker())) await unlink(emptyRosterMarker());
+  return applySeedBots();
 }
 
 export async function getBot(id: string): Promise<Bot | undefined> {
@@ -200,26 +297,54 @@ export async function createBot(input: {
   title: string;
   description: string;
   color?: string;
+  face?: string;
+  shape?: string;
+  kind?: BotKind;
+  members?: string[];
 }): Promise<Bot> {
   const bots = await listBots();
   let id = slugify(input.name);
   if (bots.some((b) => b.id === id)) id = `${id}-${Date.now().toString(36)}`;
+  const kind: BotKind = input.kind === "group" ? "group" : "bot";
+  const usedColors = new Set(bots.map((b) => b.color.toLowerCase()));
+  const unused = PALETTE.find((c) => !usedColors.has(c.toLowerCase()));
+  let members: string[] | undefined;
+  let routerId: string | undefined;
+  if (kind === "group") {
+    const byId = new Map(bots.map((b) => [b.id, b]));
+    members = [...new Set((input.members ?? []).map(String))].filter((mid) => {
+      const m = byId.get(mid);
+      return Boolean(m && m.kind !== "group");
+    });
+    if (members.length < 2) throw new Error("Pick at least two Bots");
+    if (members.length > 6) members = members.slice(0, 6);
+    routerId = members[0];
+  }
   const bot: Bot = {
     id,
-    name: input.name.trim() || "Bot",
-    title: input.title.trim() || input.name.trim() || "Bot",
-    color: input.color ?? PALETTE[bots.length % PALETTE.length],
+    name: input.name.trim() || (kind === "group" ? "Group" : "Bot"),
+    title:
+      input.title.trim() ||
+      (kind === "group" ? `Group · ${members?.length ?? 0} Bots` : input.name.trim() || "Bot"),
+    color: asColor(input.color, unused ?? PALETTE[bots.length % PALETTE.length]),
+    face: asFace(input.face ?? FACE_IDS[bots.length % FACE_IDS.length]),
+    shape: asShape(input.shape ?? SHAPE_IDS[bots.length % SHAPE_IDS.length]),
     description: input.description.trim(),
-    kind: "bot",
+    kind,
+    members,
+    routerId,
     routines: [],
   };
   await writeFile(join(botsDir(), `${id}.yaml`), stringify(bot));
   await appendMessage(id, {
     id: randomUUID(),
     role: "assistant",
-    content: `Hey — I'm ${bot.name}. ${bot.title}. What do you want me around for?`,
+    content:
+      kind === "group"
+        ? `Group · ${(bot.members ?? []).join(", ")} · ready when you are.`
+        : `Hey — I'm ${bot.name}. ${bot.title}. What do you want me around for?`,
     createdAt: new Date().toISOString(),
-    kind: "text",
+    kind: kind === "group" ? "system" : "text",
   });
   return bot;
 }

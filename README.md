@@ -29,7 +29,7 @@ pnpm start
 ```
 
 3. Open [http://127.0.0.1:3088](http://127.0.0.1:3088).
-4. Settings → Models: paste Base URL, API key, and model. **Ollama:** Base URL like `http://127.0.0.1:11434/v1`. If that server does not check keys, a dummy key is fine.
+4. Settings → Harness: pick the engine (OpenAI-compatible API, Ollama, Codex CLI, Cursor Agent, or DeepSeek Harness). If a local CLI is missing, copy the install command and install it yourself. For HTTP engines, Settings → Models: paste Base URL, API key, and model. **Ollama:** Base URL like `http://127.0.0.1:11434/v1`. If that server does not check keys, a dummy key is fine.
 5. Test connection.
 6. Pick a Bot in the left roster and send a message.
 

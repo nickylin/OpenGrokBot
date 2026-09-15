@@ -4,13 +4,23 @@ import fastifyStatic from "@fastify/static";
 import { PUBLIC_DIR } from "./paths.js";
 import { fulfillApproval, runTurn, testConnection } from "./agent.js";
 import {
+  clearRoster,
   createBot,
   getBot,
   listRoster,
   loadSettings,
   loadTranscript,
+  resetRosterToSeed,
   saveSettings,
 } from "./store.js";
+import {
+  HarnessSwitchError,
+  inferHarness,
+  listHarnesses,
+  parseHarnessId,
+  patchForHarness,
+  requireHarness,
+} from "./harness.js";
 import type { AgentEvent, Settings } from "./types.js";
 
 const PORT = Number(process.env.OPENGROKBOT_PORT ?? 3088);
@@ -39,15 +49,71 @@ export async function startServer(): Promise<void> {
     return testConnection(settings);
   });
 
+  app.get("/api/harnesses", async () => {
+    const settings = await loadSettings();
+    return { active: inferHarness(settings), harnesses: await listHarnesses() };
+  });
+
+  app.post<{ Body: { id?: string } }>("/api/harnesses/switch", async (req, reply) => {
+    const id = parseHarnessId(req.body?.id);
+    if (!id) return reply.code(400).send({ ok: false, error: "unknown harness" });
+    try {
+      await requireHarness(id);
+    } catch (err) {
+      if (err instanceof HarnessSwitchError) {
+        return reply.code(409).send({
+          ok: false,
+          needInstall: true,
+          error: err.message,
+          harness: err.harness,
+        });
+      }
+      throw err;
+    }
+    const current = await loadSettings();
+    const settings = await saveSettings(patchForHarness(id, current));
+    return { ok: true, active: id, settings };
+  });
+
   app.get("/api/bots", async () => ({ bots: await listRoster() }));
 
-  app.post<{ Body: { name?: string; title?: string; description?: string } }>("/api/bots", async (req) => {
-    const bot = await createBot({
-      name: req.body?.name ?? "Bot",
-      title: req.body?.title ?? "",
-      description: req.body?.description ?? "",
-    });
-    return bot;
+  app.post("/api/roster/clear", async () => {
+    await clearRoster();
+    return { ok: true, bots: await listRoster() };
+  });
+
+  app.post("/api/roster/reset", async () => {
+    await resetRosterToSeed();
+    return { ok: true, bots: await listRoster() };
+  });
+
+  app.post<{
+    Body: {
+      name?: string;
+      title?: string;
+      description?: string;
+      color?: string;
+      face?: string;
+      shape?: string;
+      kind?: string;
+      members?: string[];
+    };
+  }>("/api/bots", async (req, reply) => {
+    try {
+      const bot = await createBot({
+        name: req.body?.name ?? "Bot",
+        title: req.body?.title ?? "",
+        description: req.body?.description ?? "",
+        color: req.body?.color,
+        face: req.body?.face,
+        shape: req.body?.shape,
+        kind: req.body?.kind === "group" ? "group" : "bot",
+        members: Array.isArray(req.body?.members) ? req.body.members.map(String) : undefined,
+      });
+      return bot;
+    } catch (err) {
+      return reply.code(400).send({ error: err instanceof Error ? err.message : String(err) });
+    }
   });
 
   app.get<{ Params: { id: string } }>("/api/bots/:id/messages", async (req, reply) => {

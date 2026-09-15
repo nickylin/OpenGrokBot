@@ -6,8 +6,10 @@ export type DshProfile = "headless" | "web" | "sdk";
 export type SchedulerMode = "on" | "off";
 export type OnOff = "on" | "off";
 export type MessageRole = "user" | "assistant" | "system" | "tool";
+export type HarnessId = "openai-compatible" | "ollama" | "codex" | "cursor" | "dsh";
 
 export type Settings = {
+  harness: HarnessId;
   provider: string;
   baseUrl: string;
   apiKey: string;
@@ -41,6 +43,8 @@ export type Bot = {
   name: string;
   title: string;
   color: string;
+  face?: string;
+  shape?: string;
   description: string;
   kind: BotKind;
   members?: string[];
@@ -57,6 +61,7 @@ export type ChatMessage = {
   createdAt: string;
   toolName?: string;
   kind?: "text" | "handoff" | "routine" | "approval" | "system";
+  fromBotId?: string;
   decision?: ApprovalDecision;
 };
 

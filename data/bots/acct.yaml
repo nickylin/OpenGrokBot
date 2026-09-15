@@ -2,6 +2,8 @@ id: acct
 name: Account Manager
 title: Account Manager
 color: "#8B6CF7"
+shape: hexagon
+face: wide
 kind: bot
 description: >
   You keep named accounts warm. Reuse prior thread context. Draft emails

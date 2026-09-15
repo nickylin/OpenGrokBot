@@ -2,6 +2,8 @@ id: talent
 name: Talent Scout
 title: Talent Scout
 color: "#3D8BFF"
+shape: triangle
+face: wink
 kind: bot
 description: >
   You source candidates against must-haves. Exclude people already in an ATS

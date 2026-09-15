@@ -29,7 +29,7 @@ pnpm start
 ```
 
 3. 打开 [http://127.0.0.1:3088](http://127.0.0.1:3088)。
-4. Settings → Models：填 Base URL、API key、model。**Ollama：** Base URL 写成 `http://127.0.0.1:11434/v1` 这种。服务端不校验 key 的话，随便填一个占位即可。
+4. Settings → Harness：选执行器（OpenAI 兼容接口、Ollama、Codex CLI、Cursor Agent、DeepSeek Harness）。本机 CLI 没装的话，复制安装命令自己装。HTTP 引擎再到 Settings → Models 填 Base URL、API key、model。**Ollama：** Base URL 写成 `http://127.0.0.1:11434/v1` 这种。服务端不校验 key 的话，随便填一个占位即可。
 5. 先点 Test connection。
 6. 左边花名册点一个 Bot，发一条消息。
 

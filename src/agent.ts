@@ -17,6 +17,12 @@ import {
 } from "./types.js";
 import { expandHome } from "./paths.js";
 import {
+  cliPrompt,
+  inferHarness,
+  runHarnessCli,
+  testHarness,
+} from "./harness.js";
+import {
   appendMessage,
   getBot,
   listBots,
@@ -165,23 +171,52 @@ function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-async function mentionExtra(text: string, selfId: string): Promise<string> {
+async function mentionExtra(text: string, selfId: string, group?: Bot | null): Promise<string> {
   const roster = await listBots();
   const hits = roster.filter((b) => {
     if (b.kind === "group" || b.id === selfId) return false;
     return new RegExp(`@${escapeRegExp(b.name)}\\b`, "i").test(text);
   });
-  if (hits.length === 0) return "";
-  return `The user @mentioned these Bots and wants them assigned: ${hits
-    .map((b) => `${b.name} (id: ${b.id})`)
-    .join(", ")}. Call message_bot for each with a concrete task. Do not do their specialist work yourself.`;
+  const parts: string[] = [];
+  if (hits.length > 0) {
+    parts.push(
+      `The user @mentioned these Bots and wants them assigned: ${hits
+        .map((b) => `${b.name} (id: ${b.id})`)
+        .join(", ")}. Call message_bot for each with a concrete task. Do not do their specialist work yourself.`,
+    );
+  }
+  if (group?.members?.length) {
+    const others = group.members.filter((id) => id !== selfId);
+    if (others.length && shouldFanOutGroup(text)) {
+      parts.push(
+        `The user is addressing the whole group. After your brief reply, call message_bot for each other member (${others.join(", ")}) so they can greet or answer in this thread. Do not claim they are offline.`,
+      );
+    }
+  }
+  return parts.join("\n");
 }
 
-function systemPrompt(bot: Bot, settings: Settings, extra?: string): string {
-  const members = bot.kind === "group" ? `\nThis is a group chat. Members: ${(bot.members ?? []).join(", ")}. Coordinate with message_bot. Do not invent a status board.` : "";
+function shouldFanOutGroup(text: string): boolean {
+  const t = text.trim();
+  if (/^(你们好|大家好|hello everyone|hi everyone|hey all|morning everyone|你们)$/i.test(t)) return true;
+  if (/其他人|怎么不说话|everyone else|where are the others|其他人呢/i.test(t)) return true;
+  if (/^(你好|hi|hey)$/i.test(t)) return true;
+  return false;
+}
+
+function groupAgentDescription(agent: Bot, group: Bot | null): string {
+  if (!group) return agent.description.trim();
+  return `${agent.description.trim()}\n\nYou are the router in group "${group.name}". Members: ${(group.members ?? []).join(", ")}. When the user speaks to the group, keep your reply short and use message_bot so other members can answer here too.`;
+}
+
+function systemPrompt(agent: Bot, settings: Settings, extra?: string, group?: Bot | null): string {
+  const members =
+    group?.kind === "group"
+      ? `\nThis is a group chat (${group.name}). Members: ${(group.members ?? []).join(", ")}. Their replies appear in this thread when you message_bot them.`
+      : "";
   return [
-    `You are ${bot.name}, ${bot.title}.`,
-    bot.description.trim(),
+    `You are ${agent.name}, ${agent.title}.`,
+    group ? groupAgentDescription(agent, group) : agent.description.trim(),
     members,
     extra ?? "",
     "You are a persistent OpenGrokBot teammate. Other Bots are named people on the roster, not disposable subagents.",
@@ -227,6 +262,7 @@ async function persistAssistant(
   botId: string,
   content: string,
   kind: ChatMessage["kind"] = "text",
+  fromBotId?: string,
 ): Promise<ChatMessage> {
   return appendMessage(botId, {
     id: randomUUID(),
@@ -234,7 +270,21 @@ async function persistAssistant(
     content,
     createdAt: new Date().toISOString(),
     kind,
+    fromBotId,
   });
+}
+
+async function mirrorGroupReply(
+  groupThreadId: string,
+  speakerId: string,
+  content: string,
+  onEvent: (e: AgentEvent) => void,
+): Promise<ChatMessage | undefined> {
+  const text = content.trim();
+  if (!text) return undefined;
+  const saved = await persistAssistant(groupThreadId, text, "text", speakerId);
+  await emit(onEvent, { type: "message", botId: groupThreadId, message: saved });
+  return saved;
 }
 
 function localExecLabel(mode: LocalExec): string {
@@ -353,12 +403,13 @@ async function runShell(
 }
 
 async function execTool(
-  bot: Bot,
+  agent: Bot,
   settings: Settings,
   name: string,
   argsJson: string,
   nest: number,
   onEvent: (e: AgentEvent) => void,
+  groupThreadId?: string,
 ): Promise<string> {
   let args: Record<string, unknown> = {};
   try {
@@ -380,29 +431,35 @@ async function execTool(
       const message = String(args.message ?? "");
       const target = await getBot(targetId);
       if (!target) return JSON.stringify({ error: `unknown bot ${targetId}` });
-      if (target.id === bot.id) return JSON.stringify({ error: "cannot message self" });
+      if (target.id === agent.id) return JSON.stringify({ error: "cannot message self" });
       if (nest >= MAX_NEST) {
         await appendMessage(target.id, {
           id: randomUUID(),
           role: "user",
-          content: `[from ${bot.name}] ${message}`,
+          content: `[from ${agent.name}] ${message}`,
           createdAt: new Date().toISOString(),
-          kind: "text",
+          kind: "handoff",
+          fromBotId: agent.id,
         });
         return JSON.stringify({ queued: true, botId: target.id, note: "nested depth cap; left in their inbox" });
       }
       const reply = await runTurn({
         botId: target.id,
-        userText: `[Handoff from ${bot.name}] ${message}`,
+        userText: `[Handoff from ${agent.name}] ${message}`,
         nest: nest + 1,
         onEvent,
+        fromBotId: agent.id,
+        groupThreadId,
       });
+      if (groupThreadId && reply.trim()) {
+        await mirrorGroupReply(groupThreadId, target.id, reply, onEvent);
+      }
       return JSON.stringify({ botId: target.id, name: target.name, reply });
     }
     case "memory_read":
-      return (await readMemory(bot.id)) || "(empty)";
+      return (await readMemory(agent.id)) || "(empty)";
     case "memory_write":
-      await writeMemory(bot.id, String(args.content ?? ""));
+      await writeMemory(agent.id, String(args.content ?? ""));
       return "memory saved";
     case "workspace_ls": {
       const dir = jail(settings.workspace, String(args.path ?? "."));
@@ -438,6 +495,14 @@ async function execTool(
 }
 
 export async function testConnection(settings: Settings): Promise<{ ok: boolean; error?: string; model?: string }> {
+  const id = inferHarness(settings);
+  if (id === "codex" || id === "cursor" || id === "dsh") {
+    return testHarness(settings);
+  }
+  if (id === "ollama") {
+    const probe = await testHarness(settings);
+    if (!probe.ok) return probe;
+  }
   if (!settings.baseUrl || !settings.model) {
     return { ok: false, error: "Need Base URL and Model." };
   }
@@ -459,11 +524,82 @@ export async function testConnection(settings: Settings): Promise<{ ok: boolean;
   }
 }
 
+async function fanOutGroupCli(opts: {
+  group: Bot;
+  agent: Bot;
+  threadId: string;
+  settings: Settings;
+  userText: string;
+  onEvent: (e: AgentEvent) => void;
+}): Promise<void> {
+  const { group, agent, threadId, settings, userText, onEvent } = opts;
+  const label = inferHarness(settings);
+  const others = (group.members ?? []).filter((id) => id !== agent.id);
+  for (const memberId of others) {
+    const member = await getBot(memberId);
+    if (!member) continue;
+    setLiveStatus(member.id, "working", `Running ${label}`);
+    await emit(onEvent, {
+      type: "status",
+      botId: threadId,
+      status: "working",
+      action: `${member.name}…`,
+    });
+    const prompt = cliPrompt(
+      member.name,
+      member.title,
+      `${member.description.trim()}\n\nYou are in group chat "${group.name}" with ${(group.members ?? []).join(", ")}. Reply briefly in character to the user's latest message.`,
+      userText,
+    );
+    const result = await runHarnessCli(settings, prompt);
+    setLiveStatus(member.id, "idle", "Idle");
+    if (result.ok && result.text.trim()) {
+      await mirrorGroupReply(threadId, member.id, result.text, onEvent);
+    }
+  }
+}
+
+async function runCliTurn(opts: {
+  agent: Bot;
+  threadId: string;
+  group: Bot | null;
+  settings: Settings;
+  userText: string;
+  onEvent: (e: AgentEvent) => void;
+  fanOut?: boolean;
+}): Promise<string> {
+  const { agent, threadId, group, settings, userText, onEvent, fanOut = false } = opts;
+  const label = inferHarness(settings);
+  setLiveStatus(agent.id, "working", `Running ${label}`);
+  await emit(onEvent, {
+    type: "status",
+    botId: threadId,
+    status: "working",
+    action: `Running ${label}`,
+  });
+  const prompt = cliPrompt(agent.name, agent.title, groupAgentDescription(agent, group), userText);
+  const result = await runHarnessCli(settings, prompt);
+  const content = result.text;
+  const saved = await persistAssistant(threadId, content, result.ok ? "text" : "system", agent.id);
+  await emit(onEvent, { type: "message", botId: threadId, message: saved });
+  if (!result.ok) {
+    await emit(onEvent, { type: "error", botId: threadId, error: result.text });
+  } else if (fanOut && group && shouldFanOutGroup(userText)) {
+    await fanOutGroupCli({ group, agent, threadId, settings, userText, onEvent });
+  }
+  setLiveStatus(agent.id, "idle", "Idle");
+  await emit(onEvent, { type: "status", botId: threadId, status: "idle", action: "Idle" });
+  await emit(onEvent, { type: "done", botId: threadId });
+  return saved.content;
+}
+
 export async function runTurn(opts: {
   botId: string;
   userText: string;
   nest?: number;
   onEvent?: (e: AgentEvent) => void;
+  fromBotId?: string;
+  groupThreadId?: string;
 }): Promise<string> {
   const onEvent = opts.onEvent ?? (() => undefined);
   const nest = opts.nest ?? 0;
@@ -472,53 +608,98 @@ export async function runTurn(opts: {
     await emit(onEvent, { type: "error", botId: opts.botId, error: "Unknown Bot" });
     return "";
   }
+
+  let group: Bot | null = null;
+  let agent = bot;
+  let threadId = opts.groupThreadId ?? bot.id;
+  if (bot.kind === "group" && nest === 0) {
+    group = bot;
+    threadId = bot.id;
+    const routerId = bot.routerId ?? bot.members?.[0];
+    const router = routerId ? await getBot(routerId) : undefined;
+    if (!router) {
+      await emit(onEvent, { type: "error", botId: bot.id, error: "Group has no router Bot" });
+      return "";
+    }
+    agent = router;
+  } else if (opts.groupThreadId) {
+    const g = await getBot(opts.groupThreadId);
+    if (g?.kind === "group") group = g;
+  }
+
   const settings = await loadSettings();
+  const harness = inferHarness(settings);
   const local =
     settings.baseUrl.includes("127.0.0.1") || settings.baseUrl.includes("localhost");
+  const groupThreadId = group ? group.id : opts.groupThreadId;
 
   const userMsg: ChatMessage = {
     id: randomUUID(),
     role: "user",
     content: opts.userText,
     createdAt: new Date().toISOString(),
-    kind: "text",
+    kind: nest > 0 ? "handoff" : "text",
+    fromBotId: opts.fromBotId,
   };
   if (nest === 0) {
-    await appendMessage(bot.id, userMsg);
-    await emit(onEvent, { type: "message", botId: bot.id, message: userMsg });
+    await appendMessage(threadId, userMsg);
+    await emit(onEvent, { type: "message", botId: threadId, message: userMsg });
   } else {
-    await appendMessage(bot.id, userMsg);
+    await appendMessage(agent.id, userMsg);
+    await emit(onEvent, { type: "message", botId: agent.id, message: userMsg });
+  }
+
+  if (harness === "codex" || harness === "cursor" || harness === "dsh") {
+    if (nest > 0) {
+      return runCliTurn({
+        agent,
+        threadId: agent.id,
+        group: null,
+        settings,
+        userText: opts.userText,
+        onEvent,
+      });
+    }
+    return runCliTurn({
+      agent,
+      threadId,
+      group,
+      settings,
+      userText: opts.userText,
+      onEvent,
+      fanOut: true,
+    });
   }
 
   if (!settings.apiKey && !local) {
     const msg = await persistAssistant(
-      bot.id,
+      threadId,
       "No API key yet. Open Settings (⌘,) → Models and paste a key for your OpenAI-compatible endpoint.",
       "system",
     );
-    await emit(onEvent, { type: "message", botId: bot.id, message: msg });
-    await emit(onEvent, { type: "error", botId: bot.id, error: "Missing API key" });
-    await emit(onEvent, { type: "done", botId: bot.id });
+    await emit(onEvent, { type: "message", botId: threadId, message: msg });
+    await emit(onEvent, { type: "error", botId: threadId, error: "Missing API key" });
+    await emit(onEvent, { type: "done", botId: threadId });
     return msg.content;
   }
 
-  setLiveStatus(bot.id, "thinking", "Thinking");
-  await emit(onEvent, { type: "status", botId: bot.id, status: "thinking", action: "Thinking" });
+  setLiveStatus(agent.id, "thinking", "Thinking");
+  await emit(onEvent, { type: "status", botId: threadId, status: "thinking", action: "Thinking" });
 
   const openai = clientFor(settings);
   const model = nest > 0 && settings.subagentModel ? settings.subagentModel : settings.model;
-  const history = await loadTranscript(bot.id);
+  const history = await loadTranscript(nest === 0 ? threadId : agent.id);
   const usable = history.filter((m) => m.role === "user" || m.role === "assistant");
-  const extra = nest === 0 ? await mentionExtra(opts.userText, bot.id) : "";
-  const messages = toOpenAI(usable, systemPrompt(bot, settings, extra));
+  const extra = nest === 0 ? await mentionExtra(opts.userText, agent.id, group) : "";
+  const messages = toOpenAI(usable, systemPrompt(agent, settings, extra, group));
   let finalText = "";
 
   try {
     for (let round = 0; round < MAX_ROUNDS; round++) {
-      setLiveStatus(bot.id, "working", round === 0 ? "Working" : `Tool round ${round}`);
+      setLiveStatus(agent.id, "working", round === 0 ? "Working" : `Tool round ${round}`);
       await emit(onEvent, {
         type: "status",
-        botId: bot.id,
+        botId: threadId,
         status: "working",
         action: round === 0 ? "Working" : `Tool round ${round}`,
       });
@@ -542,24 +723,24 @@ export async function runTurn(opts: {
         for (const call of msg.tool_calls) {
           if (call.type !== "function") continue;
           const input = call.function.arguments ?? "{}";
-          const output = await execTool(bot, settings, call.function.name, input, nest, onEvent);
+          const output = await execTool(agent, settings, call.function.name, input, nest, onEvent, groupThreadId);
           await emit(onEvent, {
             type: "tool",
-            botId: bot.id,
+            botId: threadId,
             name: call.function.name,
             input,
             output: output.slice(0, 2000),
           });
-          if (call.function.name === "message_bot") {
+          if (call.function.name === "message_bot" && !groupThreadId) {
             let label = "Asking teammate…";
             try {
               const parsed = JSON.parse(output) as { name?: string };
-              if (parsed.name) label = `Messages from ${parsed.name}`;
+              if (parsed.name) label = `${parsed.name} replied`;
             } catch {
               /* keep default */
             }
-            const handoff = await persistAssistant(bot.id, label, "handoff");
-            await emit(onEvent, { type: "message", botId: bot.id, message: handoff });
+            const handoff = await persistAssistant(threadId, label, "handoff", agent.id);
+            await emit(onEvent, { type: "message", botId: threadId, message: handoff });
           }
           if (call.function.name === "run_shell") {
             try {
@@ -570,7 +751,7 @@ export async function runTurn(opts: {
               };
               if (parsed.needsApproval) {
                 const card = await persistAssistant(
-                  bot.id,
+                  threadId,
                   JSON.stringify({
                     title: `Run \`${parsed.command ?? "command"}\` on this machine?`,
                     body: "localExec is Ask every time. Allow once only covers this command.",
@@ -579,15 +760,15 @@ export async function runTurn(opts: {
                   }),
                   "approval",
                 );
-                await emit(onEvent, { type: "message", botId: bot.id, message: card });
-                setLiveStatus(bot.id, "blocked", "Needs approval");
+                await emit(onEvent, { type: "message", botId: threadId, message: card });
+                setLiveStatus(agent.id, "blocked", "Needs approval");
                 await emit(onEvent, {
                   type: "status",
-                  botId: bot.id,
+                  botId: threadId,
                   status: "blocked",
                   action: "Needs approval",
                 });
-                await emit(onEvent, { type: "done", botId: bot.id });
+                await emit(onEvent, { type: "done", botId: threadId });
                 return card.content;
               }
             } catch {
@@ -604,19 +785,19 @@ export async function runTurn(opts: {
       }
 
       finalText = stripThink((msg.content ?? "").trim()) || "Done.";
-      const saved = await persistAssistant(bot.id, finalText, "text");
-      await emit(onEvent, { type: "message", botId: bot.id, message: saved });
+      const saved = await persistAssistant(threadId, finalText, "text", agent.id);
+      await emit(onEvent, { type: "message", botId: threadId, message: saved });
       break;
     }
   } catch (err) {
     const error = err instanceof Error ? err.message : String(err);
-    const saved = await persistAssistant(bot.id, `Model error: ${error}`, "system");
-    await emit(onEvent, { type: "message", botId: bot.id, message: saved });
-    await emit(onEvent, { type: "error", botId: bot.id, error });
+    const saved = await persistAssistant(threadId, `Model error: ${error}`, "system");
+    await emit(onEvent, { type: "message", botId: threadId, message: saved });
+    await emit(onEvent, { type: "error", botId: threadId, error });
   }
 
-  setLiveStatus(bot.id, "idle", "Idle");
-  await emit(onEvent, { type: "status", botId: bot.id, status: "idle", action: "Idle" });
-  await emit(onEvent, { type: "done", botId: bot.id });
+  setLiveStatus(agent.id, "idle", "Idle");
+  await emit(onEvent, { type: "status", botId: threadId, status: "idle", action: "Idle" });
+  await emit(onEvent, { type: "done", botId: threadId });
   return finalText;
 }

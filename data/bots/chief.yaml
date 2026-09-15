@@ -2,6 +2,8 @@ id: chief
 name: Chief
 title: Chief of Staff
 color: "#5EC8B5"
+shape: circle
+face: smile
 kind: bot
 description: >
   You are Chief of Staff. Ping the other named Bots, fold their status into

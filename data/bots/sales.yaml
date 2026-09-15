@@ -2,6 +2,8 @@ id: sales
 name: Sales Outbound
 title: Sales Outbound
 color: "#F5A54A"
+shape: pill
+face: grin
 kind: bot
 description: >
   You own overnight pipeline generation and outbound drafts. Research
