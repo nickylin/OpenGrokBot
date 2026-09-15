@@ -6,9 +6,28 @@
 
 像给同事派活一样给 Bot 发消息。给一个岗位、把它留下、活变多了再加一个。它们记得你怎么干活，会互相交接，卡住了才回来找你批。
 
-OpenGrokBot 是开源的 **[Grok Bot](https://x.ai/bot) 平替**。同一套产品，同一套原语。用你的电脑，不用他们的云电脑。
+OpenGrokBot 是开源的 **[Grok Bot](https://x.ai/bot) 平替**。同一套产品形态，同一套原语。用你的电脑，不用他们的云电脑。
 
 > 非官方社区项目，以学习为主。与 xAI、Grok、Cursor 不是一家。详见[免责声明](#免责声明)。
+
+## 跑起来（v0.1）
+
+需要 Node 20+ 和 [pnpm](https://pnpm.io)。
+
+```bash
+git clone https://github.com/nickylin/OpenGrokBot.git
+cd OpenGrokBot
+pnpm install
+pnpm start
+```
+
+打开 [http://127.0.0.1:3088](http://127.0.0.1:3088)。Settings → Models：填入兼容 OpenAI 的 Base URL、API Key、Model。先 Test connection，再跟 Bot 说话。
+
+默认绑在 `127.0.0.1:3088`。可用 `OPENGROKBOT_HOST`、`OPENGROKBOT_PORT`、`OPENGROKBOT_HOME`（数据根目录，默认 `~/.opengrokbot`）覆盖。
+
+密钥只存在 `~/.opengrokbot/settings.json`。不要提交，不要写进 Bot 描述或聊天。
+
+`pnpm dev` 带文件监听。`pnpm typecheck` 跑 `tsc --noEmit`。
 
 ## 同一个 Bot，你的电脑
 
@@ -22,11 +41,33 @@ OpenGrokBot 是开源的 **[Grok Bot](https://x.ai/bot) 平替**。同一套产�
 | 工作区 | 所有 Bot 共用一份 `/workspace` | 磁盘上一个目录，同一套共享模型 |
 | 模型 | Cursor / Grok 指定 | 自备任何 OpenAI 兼容接口 |
 | 上手 | 发一条消息，不是搭工作流编辑器 | 一样 |
-| 价格 | Cursor / SuperGrok 订阅 | 免费。代码发布时 MIT |
+| 价格 | Cursor / SuperGrok 订阅 | 免费。MIT |
 
-其余都按官方形态做。
+## v0.1 实际有什么
 
-## 你能用到的（对照官方介绍）
+这是能跑的本机应用，不再是只有 README。
+
+**这个版本有**
+
+- 具名花名册，可以新建 Bot
+- 1:1 和群聊
+- `@` 提及和 `message_bot` 交接
+- 每个 Bot 自己的 markdown 记忆，加一份磁盘上的共享工作区
+- Shell 走 Allow once / Always allow / Deny
+- 兼容 OpenAI 的接口设置（DeepSeek、OpenRouter、本机 vLLM / Ollama `/v1` 等）
+- 电脑侧栏是状态预览，不是活的虚拟机
+
+**还没有**
+
+- 真浏览器 / computer-use
+- 定时 Routine（能看见，不会到点跑）
+- MCP 连接器
+- Auto Review 模型
+- 合上笔记本还继续干活
+
+下面官方清单是方向，不是「今天每一项都接好了」。
+
+## 往哪走（对照官方介绍）
 
 **像给同事发消息。** 新建一个 Bot，一句话写清岗位，开始聊。Chief of Staff、Sales Outbound、Inbox、Account Manager、Talent Scout——聚焦的 Bot 比 General Helper 更能攒上下文。
 
@@ -48,7 +89,7 @@ OpenGrokBot 是开源的 **[Grok Bot](https://x.ai/bot) 平替**。同一套产�
 
 > 把这周的 pipeline 名单拉下来。已经在跟进的跳过。研究前五个客户，用我的口吻起草触达，明早之前把草稿留给我批。
 
-说清干什么、在哪干、怎样算完。改一次，把稳定流程存成 Routine。
+说清干什么、在哪干、怎样算完。改一次，等调度接上再把稳定流程存成 Routine。
 
 ## 唯一不抄的那一项
 
@@ -58,11 +99,17 @@ OpenGrokBot 跑在本机系统上。合盖，团队就停。换来的是：不�
 
 若必须 24/7，留一台小机器不休眠——或者继续用官方 Grok Bot。
 
-## 现状
+## 数据在这台机器上
 
-GitHub 上暂时只有 README，是有意的。应用在本机测试，跑通再推代码。
+| 路径 | 内容 |
+|---|---|
+| `~/.opengrokbot/settings.json` | API key、模型、路径 |
+| `~/.opengrokbot/bots/` | 花名册 YAML（首次从 `data/bots/` 拷贝） |
+| `~/.opengrokbot/transcripts/` | 聊天记录 |
+| `~/.opengrokbot/memory/` | 每个 Bot 一份 `MEMORY.md` |
+| `~/.opengrokbot/workspace/` | Bot 可读写的共享文件 |
 
-许可证：代码发布时 MIT。
+许可证：[MIT](LICENSE)。
 
 ## 免责声明
 

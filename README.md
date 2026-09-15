@@ -6,9 +6,28 @@
 
 Message Bots like teammates. Give one a job, keep it around, add another when the work grows. They remember how you work, hand off to each other, and come back when something needs your approval.
 
-OpenGrokBot is the open-source **[Grok Bot](https://x.ai/bot) alternative**. Same product. Same primitives. Your computer instead of theirs.
+OpenGrokBot is the open-source **[Grok Bot](https://x.ai/bot) alternative**. Same product shape. Same primitives. Your computer instead of theirs.
 
 > Unofficial community project for learning. Not affiliated with xAI, Grok, or Cursor. See [Disclaimer](#disclaimer).
+
+## Run v0.1
+
+Needs Node 20+ and [pnpm](https://pnpm.io).
+
+```bash
+git clone https://github.com/nickylin/OpenGrokBot.git
+cd OpenGrokBot
+pnpm install
+pnpm start
+```
+
+Open [http://127.0.0.1:3088](http://127.0.0.1:3088). Settings → Models: paste an OpenAI-compatible Base URL, API key, and model. Test connection, then talk to a Bot.
+
+Defaults bind to `127.0.0.1:3088`. Override with `OPENGROKBOT_HOST`, `OPENGROKBOT_PORT`, or `OPENGROKBOT_HOME` (data root, default `~/.opengrokbot`).
+
+Keys live only in `~/.opengrokbot/settings.json`. Do not commit them. Do not put them in a Bot description or chat.
+
+`pnpm dev` is the same server with file watch. `pnpm typecheck` runs `tsc --noEmit`.
 
 ## Same Bot. Your computer.
 
@@ -22,11 +41,33 @@ Official Grok Bot ([docs](https://docs.x.ai/grok-bot/overview)): named teammates
 | Workspace | One `/workspace` for every Bot | One folder on disk, same sharing model |
 | Model | Cursor / Grok picks | You bring any OpenAI-compatible API |
 | Setup | A message, not a workflow builder | Same |
-| Price | Cursor / SuperGrok plan | Free. MIT when the code ships |
+| Price | Cursor / SuperGrok plan | Free. MIT |
 
-Everything else is the official shape.
+## What v0.1 ships
 
-## What you get (the official list)
+This is a working local app, not a README stub.
+
+**In this release**
+
+- Named roster plus Create a Bot
+- 1:1 and group threads
+- `@` mentions and `message_bot` handoffs
+- Per-Bot markdown memory and a shared workspace on disk
+- Shell commands behind Allow once / Always allow / Deny
+- Settings for any OpenAI-compatible API (DeepSeek, OpenRouter, local vLLM / Ollama `/v1`, …)
+- Computer pane as a status preview, not a live VM
+
+**Not yet**
+
+- Real browser / computer-use
+- Scheduled routines (shown on the Bot, not fired)
+- MCP connectors
+- Auto-review model
+- Work while the laptop sleeps
+
+The rest of the official list below is the north star, not a claim that every item is wired today.
+
+## Where this is going (the official list)
 
 **Message Bots like teammates.** Create a Bot, describe the job in a sentence, start talking. Chief of Staff, Sales Outbound, Inbox, Account Manager, Talent Scout — focused Bots beat a General Helper.
 
@@ -48,7 +89,7 @@ Same prompt the official docs start with:
 
 > Pull this week’s pipeline review list. Skip anyone already in an active sequence. Research the top five accounts, draft outreach in my voice, and leave me drafts to approve by tomorrow morning.
 
-Tell it what to do, where to work, what finished looks like. Correct it. Turn the stable path into a routine.
+Tell it what to do, where to work, what finished looks like. Correct it. Turn the stable path into a routine — when the scheduler exists.
 
 ## The one thing we will not copy
 
@@ -58,11 +99,17 @@ OpenGrokBot runs on the host OS. Close the lid, the team stops. In exchange: no 
 
 If you need 24/7, keep a small machine awake — or stay on official Grok Bot.
 
-## Status
+## Data on this machine
 
-README-only on GitHub on purpose. The app is in local testing. Code follows when that loop is solid.
+| Path | What |
+|---|---|
+| `~/.opengrokbot/settings.json` | API key, models, paths |
+| `~/.opengrokbot/bots/` | Roster YAML (seeded from `data/bots/` on first run) |
+| `~/.opengrokbot/transcripts/` | Chat history |
+| `~/.opengrokbot/memory/` | Per-Bot `MEMORY.md` |
+| `~/.opengrokbot/workspace/` | Shared files the Bots can read and write |
 
-License: MIT, when it ships.
+License: [MIT](LICENSE).
 
 ## Disclaimer
 

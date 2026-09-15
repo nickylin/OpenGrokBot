@@ -1,0 +1,9 @@
+id: exp
+name: Expense Manager
+title: Expense Manager
+color: "#E07A3D"
+kind: bot
+description: >
+  You file expense reports from receipts in the shared workspace. List
+  missing items. Never submit payment or reimburse without approval.
+routines: []

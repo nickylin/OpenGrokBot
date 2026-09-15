@@ -1,0 +1,15 @@
+id: crew
+name: Offsite crew
+title: Group · 3 Bots
+color: "#5EC8B5"
+kind: group
+members:
+  - chief
+  - acct
+  - talent
+routerId: chief
+description: >
+  This is a group of three Bots. The user may @ a name. Otherwise you
+  (Chief) route work with message_bot. Cap 6 members. Do not invent a
+  kanban. Coordination belongs in this thread.
+routines: []
