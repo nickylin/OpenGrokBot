@@ -10,7 +10,7 @@ Message Bots like teammates. Give one a job, keep it around, add another when th
 
 OpenGrokBot is the open-source **[Grok Bot](https://x.ai/bot) alternative**. Same product shape. Same primitives. Your computer instead of theirs.
 
-<img src="./docs/og.png" alt="OpenGrokBot local messenger: Bot roster, chat, wallpaper preview" width="720" />
+<img src="./docs/screenshot.png" alt="OpenGrokBot running locally: Bot roster on the left, Chief chat in the center" width="720" />
 
 > Unofficial community project for learning. Not affiliated with xAI, Grok, or Cursor. See [Disclaimer](#disclaimer).
 
@@ -38,8 +38,6 @@ Keys stay on this machine in `~/.opengrokbot/settings.json`. Do not commit them.
 Defaults bind to `127.0.0.1:3088`. Override with `OPENGROKBOT_HOST`, `OPENGROKBOT_PORT`, or `OPENGROKBOT_HOME`. `pnpm dev` watches files. `pnpm typecheck` runs `tsc --noEmit`.
 
 ## Same Bot. Your computer.
-
-<img src="./docs/hero.png" alt="OpenGrokBot on a local laptop, not a cloud VM" width="720" />
 
 Official Grok Bot ([docs](https://docs.x.ai/grok-bot/overview)): named teammates with jobs and compounding context. Each one works a persistent computer — browser, filesystem, terminal — and messages you like iMessage, not like a chatbot dump.
 
