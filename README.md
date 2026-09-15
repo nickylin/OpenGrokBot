@@ -1,5 +1,7 @@
 # OpenGrokBot
 
+<img src="./docs/icon.svg" alt="OpenGrokBot" width="128" />
+
 [English](README.md) · [中文](README.zh-CN.md)
 
 **AI teammates that finish the work — on your machine.**
@@ -8,11 +10,16 @@ Message Bots like teammates. Give one a job, keep it around, add another when th
 
 OpenGrokBot is the open-source **[Grok Bot](https://x.ai/bot) alternative**. Same product shape. Same primitives. Your computer instead of theirs.
 
+<img src="./docs/og.png" alt="OpenGrokBot local messenger: Bot roster, chat, wallpaper preview" width="720" />
+
 > Unofficial community project for learning. Not affiliated with xAI, Grok, or Cursor. See [Disclaimer](#disclaimer).
 
-## Run v0.1
+## How to use
 
-Needs Node 20+ and [pnpm](https://pnpm.io).
+You bring your own model. OpenGrokBot does not ship one. Point it at local **Ollama** (`/v1`) or any **OpenAI-compatible API** (DeepSeek, OpenRouter, MiniMax-style endpoints, and the rest).
+
+1. Install Node 20+ and [pnpm](https://pnpm.io).
+2. Clone, install, start:
 
 ```bash
 git clone https://github.com/nickylin/OpenGrokBot.git
@@ -21,15 +28,18 @@ pnpm install
 pnpm start
 ```
 
-Open [http://127.0.0.1:3088](http://127.0.0.1:3088). Settings → Models: paste an OpenAI-compatible Base URL, API key, and model. Test connection, then talk to a Bot.
+3. Open [http://127.0.0.1:3088](http://127.0.0.1:3088).
+4. Settings → Models: paste Base URL, API key, and model. **Ollama:** Base URL like `http://127.0.0.1:11434/v1`. If that server does not check keys, a dummy key is fine.
+5. Test connection.
+6. Pick a Bot in the left roster and send a message.
 
-Defaults bind to `127.0.0.1:3088`. Override with `OPENGROKBOT_HOST`, `OPENGROKBOT_PORT`, or `OPENGROKBOT_HOME` (data root, default `~/.opengrokbot`).
+Keys stay on this machine in `~/.opengrokbot/settings.json`. Do not commit them. Do not put them in a Bot description or chat.
 
-Keys live only in `~/.opengrokbot/settings.json`. Do not commit them. Do not put them in a Bot description or chat.
-
-`pnpm dev` is the same server with file watch. `pnpm typecheck` runs `tsc --noEmit`.
+Defaults bind to `127.0.0.1:3088`. Override with `OPENGROKBOT_HOST`, `OPENGROKBOT_PORT`, or `OPENGROKBOT_HOME`. `pnpm dev` watches files. `pnpm typecheck` runs `tsc --noEmit`.
 
 ## Same Bot. Your computer.
+
+<img src="./docs/hero.png" alt="OpenGrokBot on a local laptop, not a cloud VM" width="720" />
 
 Official Grok Bot ([docs](https://docs.x.ai/grok-bot/overview)): named teammates with jobs and compounding context. Each one works a persistent computer — browser, filesystem, terminal — and messages you like iMessage, not like a chatbot dump.
 
@@ -66,6 +76,8 @@ This is a working local app, not a README stub.
 - Work while the laptop sleeps
 
 The rest of the official list below is the north star, not a claim that every item is wired today.
+
+<img src="./docs/map.svg" alt="v0.1 map: roster, chat, memory and files, shell approvals" width="640" />
 
 ## Where this is going (the official list)
 

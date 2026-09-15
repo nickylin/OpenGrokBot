@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720" role="img" aria-label="OpenGrokBot v0.1 product map">
+  <title>OpenGrokBot v0.1 - roster, chat, memory, approvals</title>
+  <defs>
+    <style>
+      .bg { fill: #070708; }
+      .panel { fill: #161617; stroke: rgba(255,255,255,0.08); stroke-width: 1; }
+      .label {
+        font-family: "Segoe UI", Helvetica, Arial, sans-serif;
+        font-size: 22px;
+        font-weight: 700;
+        fill: #f5f5f7;
+      }
+      .sub {
+        font-family: "Segoe UI", Helvetica, Arial, sans-serif;
+        font-size: 16px;
+        fill: #8e8e93;
+      }
+      .tiny {
+        font-family: "Segoe UI", Helvetica, Arial, sans-serif;
+        font-size: 14px;
+        fill: #c7c7cc;
+      }
+      .title {
+        font-family: "Segoe UI", Helvetica, Arial, sans-serif;
+        font-size: 28px;
+        font-weight: 700;
+        fill: #f5f5f7;
+      }
+      .note {
+        font-family: "Segoe UI", Helvetica, Arial, sans-serif;
+        font-size: 15px;
+        fill: #8e8e93;
+      }
+    </style>
+  </defs>
+  <rect class="bg" width="1280" height="720"/>
+  <text class="title" x="64" y="78">v0.1 on this machine</text>
+  <text class="note" x="64" y="112">Named Bots, local chat, files, and shell approvals. Computer pane is a wallpaper preview, not a live VM.</text>
+
+  <rect class="panel" x="48" y="156" width="268" height="430" rx="22"/>
+  <circle cx="92" cy="214" r="18" fill="#5EC8B5"/>
+  <circle cx="92" cy="270" r="18" fill="#F5A54A"/>
+  <circle cx="92" cy="326" r="18" fill="#4A6FA5"/>
+  <circle cx="92" cy="382" r="18" fill="#8B6CF7"/>
+  <text class="label" x="80" y="454">Roster</text>
+  <text class="sub" x="80" y="486">Named Bots with jobs</text>
+  <text class="tiny" x="80" y="518">1:1 and group threads</text>
+  <text class="tiny" x="124" y="220">Chief</text>
+  <text class="tiny" x="124" y="276">Sales</text>
+  <text class="tiny" x="124" y="332">Inbox</text>
+  <text class="tiny" x="124" y="388">Talent</text>
+
+  <polygon fill="#8e8e93" points="332,370 356,358 356,382"/>
+
+  <rect class="panel" x="372" y="156" width="268" height="430" rx="22"/>
+  <rect x="404" y="214" width="204" height="44" rx="14" fill="#2c2c2e"/>
+  <rect x="404" y="274" width="168" height="44" rx="14" fill="#f4f4f5"/>
+  <rect x="404" y="334" width="204" height="44" rx="14" fill="#2c2c2e"/>
+  <text class="label" x="404" y="454">Chat</text>
+  <text class="sub" x="404" y="486">Message like a teammate</text>
+  <text class="tiny" x="404" y="518">@ mentions / message_bot</text>
+
+  <polygon fill="#8e8e93" points="656,370 680,358 680,382"/>
+
+  <rect class="panel" x="696" y="156" width="268" height="430" rx="22"/>
+  <rect x="728" y="214" width="204" height="56" rx="12" fill="#111112" stroke="rgba(255,255,255,0.08)"/>
+  <rect x="728" y="286" width="204" height="56" rx="12" fill="#111112" stroke="rgba(255,255,255,0.08)"/>
+  <text class="tiny" x="748" y="248">MEMORY.md / Bot</text>
+  <text class="tiny" x="748" y="320">shared workspace</text>
+  <text class="label" x="728" y="454">Memory + files</text>
+  <text class="sub" x="728" y="486">Stays on this machine</text>
+  <text class="tiny" x="728" y="518">Not a cloud computer</text>
+
+  <polygon fill="#8e8e93" points="980,370 1004,358 1004,382"/>
+
+  <rect class="panel" x="1020" y="156" width="212" height="430" rx="22"/>
+  <rect x="1044" y="214" width="164" height="36" rx="10" fill="#34c759"/>
+  <rect x="1044" y="262" width="164" height="36" rx="10" fill="#2c2c2e"/>
+  <rect x="1044" y="310" width="164" height="36" rx="10" fill="#2c2c2e"/>
+  <text class="tiny" x="1064" y="238" fill="#111111">Allow once</text>
+  <text class="tiny" x="1058" y="286">Always allow</text>
+  <text class="tiny" x="1088" y="334">Deny</text>
+  <text class="label" x="1044" y="454">Approvals</text>
+  <text class="sub" x="1044" y="486">Shell waits for you</text>
+  <text class="tiny" x="1044" y="518">v0.1 gate</text>
+
+  <rect class="panel" x="48" y="612" width="1184" height="64" rx="16"/>
+  <circle cx="84" cy="644" r="8" fill="#7c5cff"/>
+  <text class="note" x="108" y="650">Computer pane in v0.1: wallpaper / status preview. No live browser, no scheduled routines, no MCP yet.</text>
+</svg>

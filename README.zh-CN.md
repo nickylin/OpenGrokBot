@@ -1,5 +1,7 @@
 # OpenGrokBot
 
+<img src="./docs/icon.svg" alt="OpenGrokBot" width="128" />
+
 [English](README.md) · [中文](README.zh-CN.md)
 
 **能把活干完的 AI 同事——跑在你自己的电脑上。**
@@ -8,11 +10,16 @@
 
 OpenGrokBot 是开源的 **[Grok Bot](https://x.ai/bot) 平替**。同一套产品形态，同一套原语。用你的电脑，不用他们的云电脑。
 
+<img src="./docs/og.png" alt="OpenGrokBot 本机信使：左边花名册，中间聊天，右侧壁纸预览" width="720" />
+
 > 非官方社区项目，以学习为主。与 xAI、Grok、Cursor 不是一家。详见[免责声明](#免责声明)。
 
-## 跑起来（v0.1）
+## 如何使用
 
-需要 Node 20+ 和 [pnpm](https://pnpm.io)。
+模型自己带。OpenGrokBot 不内置模型。可以接本机 **Ollama**（`/v1`），或任何 **OpenAI 兼容接口**（DeepSeek、OpenRouter、以及同类 endpoint）。
+
+1. 安装 Node 20+ 和 [pnpm](https://pnpm.io)。
+2. 克隆，安装，启动：
 
 ```bash
 git clone https://github.com/nickylin/OpenGrokBot.git
@@ -21,15 +28,18 @@ pnpm install
 pnpm start
 ```
 
-打开 [http://127.0.0.1:3088](http://127.0.0.1:3088)。Settings → Models：填入兼容 OpenAI 的 Base URL、API Key、Model。先 Test connection，再跟 Bot 说话。
+3. 打开 [http://127.0.0.1:3088](http://127.0.0.1:3088)。
+4. Settings → Models：填 Base URL、API key、model。**Ollama：** Base URL 类似 `http://127.0.0.1:11434/v1`。如果服务端不校验 key，占位 key 即可。
+5. 先 Test connection。
+6. 左边花名册里点一个 Bot，发一条消息。
 
-默认绑在 `127.0.0.1:3088`。可用 `OPENGROKBOT_HOST`、`OPENGROKBOT_PORT`、`OPENGROKBOT_HOME`（数据根目录，默认 `~/.opengrokbot`）覆盖。
+密钥只留在这台机器的 `~/.opengrokbot/settings.json`。不要提交，不要写进 Bot 描述或聊天。
 
-密钥只存在 `~/.opengrokbot/settings.json`。不要提交，不要写进 Bot 描述或聊天。
-
-`pnpm dev` 带文件监听。`pnpm typecheck` 跑 `tsc --noEmit`。
+默认绑在 `127.0.0.1:3088`。可用 `OPENGROKBOT_HOST`、`OPENGROKBOT_PORT`、`OPENGROKBOT_HOME` 覆盖。`pnpm dev` 带文件监听。`pnpm typecheck` 跑 `tsc --noEmit`。
 
 ## 同一个 Bot，你的电脑
+
+<img src="./docs/hero.png" alt="OpenGrokBot 跑在本机笔记本上，不是云虚拟机" width="720" />
 
 官方 Grok Bot（[文档](https://docs.x.ai/grok-bot/overview)）：有名字、有岗位、上下文会累积。每个 Bot 有一台持久电脑——浏览器、文件系统、终端——聊天像 iMessage，不是把草稿堆在对话框里。
 
@@ -66,6 +76,8 @@ pnpm start
 - 合上笔记本还继续干活
 
 下面官方清单是方向，不是「今天每一项都接好了」。
+
+<img src="./docs/map.svg" alt="v0.1 产品图：花名册、聊天、记忆和文件、shell 审批" width="640" />
 
 ## 往哪走（对照官方介绍）
 
