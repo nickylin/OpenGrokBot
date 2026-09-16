@@ -57,13 +57,16 @@ pnpm start
 
 **这个版本有**
 
-- 带名字的花名册，可以新建 Bot
-- 一对一，也可以群聊
-- `@` 提及，以及 `message_bot` 交接
+- 带名字的花名册，可以新建 Bot（选颜色、形状、表情）
+- **Harness 切换** — OpenAI 兼容 HTTP、Ollama、Codex CLI、Cursor Agent、DeepSeek Harness；本机 CLI 没装会给出安装命令
+- **头像** — 8 种形状、8 种表情；idle / thinking / working / waiting / blocked / done 六种状态动效长在脸上，不用额外转圈
+- 一对一和群聊；群消息经协调 Bot 路由，成员回复会镜像进同一条线程
+- `@` 提及（聊天里可点击跳转）和 `message_bot` 交接，交接条是系统样式，不是用户气泡
+- **气泡 Markdown** — 表格、分隔线、标题、列表、粗体、行内代码、代码块、链接
 - 每个 Bot 一份 markdown 记忆，磁盘上还有一份共用工作区
 - 跑 Shell 要过 Allow once / Always allow / Deny
-- 设置页能接任何 OpenAI 兼容接口（DeepSeek、OpenRouter、本机 vLLM / Ollama `/v1` 等）
-- 右边「电脑」栏是状态预览，不是一台真在跑的虚拟机
+- Settings → Agent：清空花名册，或重置为 `data/bots/` 里的 starter 配置
+- 右边「电脑」栏是状态预览（干活时图标变紫、壁纸跟时间走），不是一台真在跑的虚拟机
 
 **还没有**
 
@@ -76,6 +79,46 @@ pnpm start
 下面那份官方清单是方向，不是「今天每一项都接好了」。
 
 <img src="./docs/map.svg" alt="v0.1 产品图：花名册、聊天、记忆和文件、shell 审批" width="640" />
+
+## 界面与在场感
+
+侧栏是产品本体，状态长在头像上，界面尽量别给你加负担。
+
+### Harness（一轮对话怎么跑）
+
+Settings → **Harness** 选执行器：
+
+| 引擎 | 依赖 |
+|---|---|
+| OpenAI-compatible | 你在 Models 里填的 Base URL + API key + model（DeepSeek、OpenRouter、vLLM 等） |
+| Ollama | 本机 `/v1` 接口 |
+| Codex CLI | 本机 `codex` |
+| Cursor Agent | 本机 `cursor` CLI / agent |
+| DeepSeek Harness | 本机 `dsh` |
+
+CLI 类引擎若未安装，设置页会给可复制安装命令。HTTP 引擎仍在 Settings → **Models** 里配模型。
+
+### 头像
+
+新建 Bot → 选 **Color**、**Shape**、**Expression**。
+
+**形状：** circle、oval、squircle、pill、triangle、hexagon、cloud、teardrop — 纯色轮廓 + 斜线眼睛，贴近官方那套。
+
+**表情：** smile、calm、grin、sleepy、wink、wide、glasses、dots。
+
+**生命周期动效**（花名册 + 输入时那一行）：idle 安静；thinking / working / waiting / blocked 换眼睛和节奏；done 停一下再回 idle。悬停花名册行可看当前 action，不用另挂状态灯。
+
+### 聊天与线程
+
+- Bot 回复支持 **Markdown**，含 `---` 分隔线和 `| 表格 |`。
+- **群聊**（2–6 个 Bot）：你的消息交给 router（如 Chief）；成员回复带名字和头像出现在同一线程。
+- **交接**（`[Handoff from …]`）居中系统条，不像用户发言。
+- 线程里点 **`@Bot`**  chip 跳到该 Bot 私聊。
+
+### 花名册操作
+
+- **+** 菜单：New Bot、New conversation、New group。
+- **Settings → Agent → Roster：** 清空全部 Bot（含 transcript），或重置为 `data/bots/` 种子配置。
 
 ## 后面想做成什么样
 

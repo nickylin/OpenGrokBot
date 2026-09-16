@@ -57,13 +57,16 @@ This is a working local app, not a README stub.
 
 **In this release**
 
-- Named roster plus Create a Bot
-- 1:1 and group threads
-- `@` mentions and `message_bot` handoffs
+- Named roster plus Create a Bot (color, shape, expression)
+- **Harness switcher** — OpenAI-compatible HTTP, Ollama, Codex CLI, Cursor Agent, or DeepSeek Harness, with install hints for missing local CLIs
+- **Avatars** — 8 shapes and 8 expressions; lifecycle motion (idle / thinking / working / waiting / blocked / done) on the face, not a separate spinner
+- 1:1 and group threads; group messages route through a coordinator Bot and mirror member replies into the thread
+- `@` mentions (clickable in chat) and `message_bot` handoffs shown as system strips, not user bubbles
+- **Markdown in bubbles** — tables, horizontal rules, headings, lists, bold, inline code, fenced blocks, links
 - Per-Bot markdown memory and a shared workspace on disk
 - Shell commands behind Allow once / Always allow / Deny
-- Settings for any OpenAI-compatible API (DeepSeek, OpenRouter, local vLLM / Ollama `/v1`, …)
-- Computer pane as a status preview, not a live VM
+- Settings → Agent: clear roster or reset to the starter bots in `data/bots/`
+- Computer pane as a status preview (purple icon while active, time-of-day wallpaper), not a live VM
 
 **Not yet**
 
@@ -76,6 +79,46 @@ This is a working local app, not a README stub.
 The rest of the official list below is the north star, not a claim that every item is wired today.
 
 <img src="./docs/map.svg" alt="v0.1 map: roster, chat, memory and files, shell approvals" width="640" />
+
+## UI and presence
+
+The roster is the product, presence lives on the avatar, and the interface should ask less of you over time.
+
+### Harness (how a turn runs)
+
+Settings → **Harness** picks the engine for every Bot turn:
+
+| Engine | What it uses |
+|---|---|
+| OpenAI-compatible | Your Base URL + API key + model (DeepSeek, OpenRouter, vLLM, etc.) |
+| Ollama | Local `/v1` endpoint |
+| Codex CLI | `codex` on this machine |
+| Cursor Agent | `cursor` CLI / agent on this machine |
+| DeepSeek Harness | `dsh` on this machine |
+
+If a CLI harness is selected but not installed, Settings shows a copy-paste install command. HTTP engines still configure models under Settings → **Models**.
+
+### Avatars
+
+Create Bot → pick **Color**, **Shape**, and **Expression**.
+
+**Shapes:** circle, oval, squircle, pill, triangle, hexagon, cloud, teardrop — flat silhouettes with diagonal-line eyes in the shape picker, closer to the official set.
+
+**Expressions:** smile, calm, grin, sleepy, wink, wide, glasses, dots.
+
+**Lifecycle motion** (roster + typing row): idle is calm; thinking/working/waiting/blocked change eye style and motion; done settles then returns to idle. Hover a roster row to see the Bot’s current action without extra chrome.
+
+### Chat and threads
+
+- Bot replies render **Markdown** — including `---` rules and `| tables |`.
+- **Group chats** (2–6 Bots): your message goes to a router Bot (e.g. Chief); member replies appear in the same thread with name + avatar.
+- **Handoffs** (`[Handoff from …]`) render as a centered system strip, not a user bubble.
+- Click an **`@Bot`** chip in a thread to jump to that Bot’s chat.
+
+### Roster actions
+
+- **+** menu: New Bot, New conversation, New group.
+- **Settings → Agent → Roster:** clear all bots (and transcripts) or reset to the seed YAML in `data/bots/`.
 
 ## Where this is going (the official list)
 
