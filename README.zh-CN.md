@@ -37,6 +37,53 @@ pnpm start
 
 默认监听 `127.0.0.1:3088`。要改的话用 `OPENGROKBOT_HOST`、`OPENGROKBOT_PORT`、`OPENGROKBOT_HOME`。`pnpm dev` 会盯着文件变。`pnpm typecheck` 跑 `tsc --noEmit`。
 
+## 桌面应用（macOS）
+
+OpenGrokBot 提供未签名的 Electron `.dmg`，方便本机使用。桌面版会自动启动 Fastify 服务，并在窗口里打开 UI。
+
+**环境要求：** macOS；系统 `PATH` 里要有 Node 20+（打包版会调用本机 `node`）；pnpm。
+
+**构建 DMG：**
+
+```bash
+pnpm install
+pnpm build:dmg
+```
+
+产物在 `release/`（例如 `release/OpenGrokBot-0.2.0.dmg`、`release/OpenGrokBot-0.2.0-mac.zip`，以及 `release/mac/OpenGrokBot.app`）。
+
+若 `electron-builder` 在 DMG 步骤卡住，app 和 zip 仍然可用。可手动打 DMG：
+
+```bash
+hdiutil create -volname "OpenGrokBot" -srcfolder release/mac/OpenGrokBot.app -ov -format UDZO release/OpenGrokBot-0.2.0.dmg
+```
+
+**安装未签名包：** macOS 可能拦截首次打开。请右键 **OpenGrokBot → 打开**，或执行：
+
+```bash
+xattr -cr /Applications/OpenGrokBot.app
+```
+
+**Electron 开发模式：**
+
+```bash
+pnpm dev:desktop
+```
+
+会先跑 TypeScript 开发服务，等 `/api/health` 就绪后再打开 Electron 窗口。
+
+**v0.2 限制：** 系统 `PATH` 里要有 Node 20+（应用会调用本机 `node` 跑服务）。无代码签名、自动更新或菜单栏托盘。CLI 执行器（`codex`、`cursor`、`dsh`）仍需在本机单独安装。用户数据仍在 `~/.opengrokbot/`。
+
+### 后台通知
+
+标签页或 Electron 窗口在后台时，OpenGrokBot 可以在以下情况提醒你：
+
+- Bot 回复完成
+- Bot 需要审批（`Blocked`）
+- 定时 routine 触发（通过花名册轮询）
+
+在 **Settings → Agent → Background notifications** 打开。首次开启时浏览器或 macOS 会请求权限。点击通知会聚焦应用并打开对应 Bot。前台正在看应用时不会弹通知。
+
 ## 官方那套，跑在你电脑上
 
 官方 Grok Bot（[文档](https://docs.x.ai/grok-bot/overview)）是这样的：每个 Bot 有名字、有岗位，上下文会越攒越厚。各自守着一台电脑——浏览器、文件系统、终端——跟你聊天像 iMessage，不是把草稿全堆在对话框里。
@@ -51,34 +98,39 @@ pnpm start
 | 上手 | 发一条消息，不是去搭工作流编辑器 | 一样 |
 | 价格 | Cursor / SuperGrok 订阅 | 免费。MIT |
 
-## v0.1 现在有什么
+## v0.2 现在有什么
 
 这是能跑起来的本机应用，不是只有一篇 README。
 
 **这个版本有**
 
+- **macOS 桌面应用** — 未签名的 Electron `.dmg`；自动启动本机服务并在窗口里打开 UI
 - 带名字的花名册，可以新建 Bot（选颜色、形状、表情）
 - **Harness 切换** — OpenAI 兼容 HTTP、Ollama、Codex CLI、Cursor Agent、DeepSeek Harness；本机 CLI 没装会给出安装命令
 - **头像** — 8 种形状、8 种表情；idle / thinking / working / waiting / blocked / done 六种状态动效长在脸上，不用额外转圈
+- **Token 流式输出** — OpenAI 兼容执行器会把回复逐 token 流进气泡（CLI 执行器仍是整段返回）
 - 一对一和群聊；群消息经协调 Bot 路由，成员回复会镜像进同一条线程
 - `@` 提及（聊天里可点击跳转）和 `message_bot` 交接，交接条是系统样式，不是用户气泡
 - **气泡 Markdown** — 表格、分隔线、标题、列表、粗体、行内代码、代码块、链接
 - 每个 Bot 一份 markdown 记忆，磁盘上还有一份共用工作区
-- 跑 Shell 要过 Allow once / Always allow / Deny
+- 跑 Shell 要过 Allow once / Always allow / Deny；**点 Allow 后会带着命令输出继续跑 agent 循环**
+- **`/routine` 选择器** — 输入框里打 `/` 可触发 Bot 的 routine 提示词
+- **定时 Routine** — 进程内调度器在应用打开时到点触发启用的 routine（Settings → Agent → Host scheduler）
+- **后台通知** — 浏览器或 macOS 在回复完成、需要审批或 routine 触发时提醒
 - Settings → Agent：清空花名册，或重置为 `data/bots/` 里的 starter 配置
 - 右边「电脑」栏是状态预览（干活时图标变紫、壁纸跟时间走），不是一台真在跑的虚拟机
 
 **还没有**
 
 - 真浏览器 / computer-use
-- 定时 Routine（能看见，到点不会自己跑）
+- 应用关闭后的 launchd / 登录项定时
 - MCP 连接器
 - Auto Review 模型
 - 合上笔记本还继续干活
 
 下面那份官方清单是方向，不是「今天每一项都接好了」。
 
-<img src="./docs/map.svg" alt="v0.1 产品图：花名册、聊天、记忆和文件、shell 审批" width="640" />
+<img src="./docs/map.svg" alt="v0.2 产品图：花名册、聊天、记忆和文件、shell 审批" width="640" />
 
 ## 界面与在场感
 
@@ -142,7 +194,7 @@ CLI 类引擎若未安装，设置页会给可复制安装命令。HTTP 引擎�
 
 > 把这周的 pipeline 名单拉下来。已经在跟进的跳过。研究前五个客户，用我的口吻起草触达，明早之前把草稿留给我批。
 
-说清干什么、在哪干、怎样算完。不对就改。等调度接上以后，再把走顺的流程存成 Routine。
+说清干什么、在哪干、怎样算完。不对就改。走顺的流程存成 Routine，钉在这个 Bot 上。
 
 ## 合上盖子，它就停了
 

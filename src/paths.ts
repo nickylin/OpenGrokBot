@@ -3,7 +3,12 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { mkdir } from "node:fs/promises";
 
-export const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
+function resolveRoot(): string {
+  if (process.env.OPENGROKBOT_ROOT) return process.env.OPENGROKBOT_ROOT;
+  return join(dirname(fileURLToPath(import.meta.url)), "..");
+}
+
+export const ROOT = resolveRoot();
 export const PUBLIC_DIR = join(ROOT, "public");
 export const SEED_BOTS_DIR = join(ROOT, "data", "bots");
 

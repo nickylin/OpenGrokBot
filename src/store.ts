@@ -85,6 +85,7 @@ export const DEFAULT_SETTINGS: Settings = {
   requireSend: "on",
   profileName: "You",
   profileColor: "#E8B86D",
+  notifications: "on",
 };
 
 const live = new Map<string, { status: BotStatus; action: string }>();

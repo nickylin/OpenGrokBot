@@ -1,10 +1,12 @@
 {
   "name": "opengrokbot",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "license": "MIT",
   "type": "module",
+  "main": "desktop/main.mjs",
   "description": "Local-first Grok Bot-style roster of persistent agents. Unofficial. Bring any OpenAI-compatible API.",
+  "author": "nickylin",
   "homepage": "https://github.com/nickylin/OpenGrokBot#readme",
   "bugs": {
     "url": "https://github.com/nickylin/OpenGrokBot/issues"
@@ -22,7 +24,14 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "start": "tsx src/index.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "build:server": "tsc -p tsconfig.build.json",
+    "prepare:icon": "node scripts/prepare-icon.mjs",
+    "prepare:electron": "node scripts/prepare-electron-dist.mjs",
+    "stage:server": "node scripts/stage-server.mjs",
+    "dev:desktop": "concurrently -k -n server,electron -c blue,magenta \"pnpm dev\" \"wait-on http://127.0.0.1:3088/api/health && electron desktop/main.mjs\"",
+    "build:desktop": "pnpm build:server && pnpm stage:server && pnpm prepare:icon && pnpm prepare:electron && ELECTRON_BUILDER_HTTP_TIMEOUT=1200000 ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/ electron-builder --mac --config electron-builder.yml",
+    "build:dmg": "pnpm build:desktop"
   },
   "engines": {
     "node": ">=20"
@@ -36,10 +45,14 @@
   },
   "devDependencies": {
     "@types/node": "^22.18.0",
+    "concurrently": "^9.2.1",
+    "electron": "^38.1.2",
+    "electron-builder": "^26.0.12",
     "tsx": "^4.20.5",
-    "typescript": "^5.9.2"
+    "typescript": "^5.9.2",
+    "wait-on": "^9.0.1"
   },
   "pnpm": {
-    "onlyBuiltDependencies": ["esbuild"]
+    "onlyBuiltDependencies": ["esbuild", "electron"]
   }
 }

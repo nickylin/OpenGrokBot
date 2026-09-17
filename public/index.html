@@ -187,19 +187,41 @@
       position: relative;
     }
     .titlebar {
-      display: flex;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
       align-items: center;
       padding: 0 14px;
       background: var(--titlebar);
       border-bottom: 1px solid var(--line);
-      gap: 8px;
+      -webkit-app-region: drag;
     }
-    .dots { display: flex; gap: 6px; }
+    .titlebar-inset {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }
+    .titlebar-leading { justify-content: flex-start; }
+    .titlebar-trailing { justify-content: flex-end; }
+    .titlebar-title {
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+      color: var(--muted);
+      line-height: 1;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: min(240px, 40vw);
+      justify-self: center;
+      user-select: none;
+      pointer-events: none;
+    }
+    .dots { display: flex; gap: 6px; -webkit-app-region: no-drag; }
     .dots i { width: 10px; height: 10px; border-radius: 50%; display: block; }
     .dots .r { background: #ff5f57; }
     .dots .y { background: #febc2e; }
     .dots .g { background: #28c840; }
-    .titlebar .grow { flex: 1; }
     .comp-btn {
       width: 28px; height: 22px;
       border: 0; background: transparent;
@@ -207,6 +229,7 @@
       border-radius: 6px;
       cursor: pointer;
       display: grid; place-items: center;
+      -webkit-app-region: no-drag;
       transition: color var(--dur-fast) var(--ease-out-quint), background var(--dur-fast) var(--ease-out-quint), transform var(--dur-fast) var(--ease-out-quint);
     }
     .comp-btn.active, .comp-btn.live { color: var(--purple); }
@@ -308,12 +331,12 @@
       transition: background var(--dur-fast) var(--ease-out-quint);
     }
     .window.preview .row {
-      grid-template-columns: 36px;
+      grid-template-columns: 1fr;
       justify-items: center;
       padding: 8px 0;
     }
     .window.preview .side-top { display: none; }
-    .window.preview .roster { padding-top: 10px; }
+    .window.preview .roster { padding: 10px 0; }
     .window.preview .row .meta, .window.preview .row .when { display: none; }
     .row:hover { background: var(--row-hover); }
     .row.active { background: var(--row-active); }
@@ -420,12 +443,31 @@
       animation-delay: var(--face-delay, 0s);
       pointer-events: none;
     }
-    .stack { width: 36px; height: 36px; position: relative; overflow: visible; }
+    .stack { width: 36px; height: 36px; position: relative; overflow: visible; flex-shrink: 0; }
     .stack .avatar { position: absolute; width: 24px; height: 24px; }
-    .stack .avatar:first-child { left: 0; top: 10px; }
-    .stack .avatar:last-child { right: 0; top: 2px; }
+    .stack .avatar:nth-child(1) { left: 0; top: 10px; }
+    .stack .avatar:nth-child(2) { right: 0; top: 2px; }
     .stack .avatar::before,
     .stack .avatar::after { display: none; content: none; animation: none; }
+    .stack-more {
+      position: absolute;
+      right: 1px;
+      bottom: 1px;
+      min-width: 14px;
+      height: 14px;
+      padding: 0 3px;
+      border-radius: 7px;
+      background: var(--elevated-2);
+      border: 1px solid var(--line-strong);
+      color: var(--text);
+      font-size: 9px;
+      font-weight: 600;
+      line-height: 12px;
+      text-align: center;
+      z-index: 2;
+      pointer-events: none;
+      box-sizing: border-box;
+    }
 
     .tip {
       position: absolute; left: 48px; top: 8px;
@@ -459,7 +501,6 @@
     .chat-head .who { font-size: 14px; font-weight: 600; }
     .chat-head .sub { font-size: 11px; color: var(--muted); }
     .elapsed { margin-left: auto; font-size: 12px; color: var(--muted); }
-
     .thread {
       min-height: 0;
       overflow: auto;
@@ -922,6 +963,10 @@
       0%, 100% { opacity: 1; }
       50% { opacity: 0.55; }
     }
+    @keyframes typing-dot {
+      0%, 55%, 100% { opacity: 0.3; transform: translateY(0); }
+      28% { opacity: 0.95; transform: translateY(-3px); }
+    }
     @keyframes rise-in {
       from { opacity: 0; transform: translateY(8px); }
       to { opacity: 1; transform: none; }
@@ -1141,6 +1186,29 @@
       font-size: 13px;
     }
     .typing .avatar { width: 22px; height: 22px; }
+    .typing-copy {
+      display: inline-flex;
+      align-items: baseline;
+      gap: 0;
+    }
+    .typing-dots {
+      display: inline-flex;
+      align-items: flex-end;
+      gap: 2px;
+      height: 1em;
+      margin-left: 1px;
+      padding-bottom: 0.05em;
+    }
+    .typing-dots i {
+      width: 3px;
+      height: 3px;
+      border-radius: 50%;
+      background: currentColor;
+      opacity: 0.3;
+      animation: typing-dot 1.15s var(--ease-out-quint) infinite;
+    }
+    .typing-dots i:nth-child(2) { animation-delay: 0.18s; }
+    .typing-dots i:nth-child(3) { animation-delay: 0.36s; }
     .msg .bubble { white-space: normal; overflow-wrap: anywhere; }
     .bubble p { margin: 0 0 0.45em; }
     .bubble p:last-child { margin: 0; }
@@ -1157,6 +1225,33 @@
       background: var(--pre-bg); overflow: auto;
     }
     .bubble pre code { background: none; padding: 0; }
+    .bubble table {
+      border-collapse: collapse;
+      width: 100%;
+      margin: 0.35em 0 0.5em;
+      font-size: 0.92em;
+    }
+    .bubble th, .bubble td {
+      border: 1px solid var(--line);
+      padding: 4px 8px;
+      text-align: left;
+      vertical-align: top;
+    }
+    .bubble th { font-weight: 650; background: color-mix(in srgb, var(--bubble) 88%, var(--text) 12%); }
+    .msg.user .bubble th { background: color-mix(in srgb, var(--bubble-user) 88%, #111 12%); }
+    .bubble hr {
+      border: none;
+      border-top: 1px solid var(--line);
+      margin: 0.55em 0;
+    }
+    .bubble ul, .bubble ol { margin: 0.35em 0 0.45em; padding-left: 1.25em; }
+    .bubble li { margin: 0.15em 0; }
+    .bubble h1, .bubble h2, .bubble h3 {
+      font-size: 1em;
+      font-weight: 650;
+      margin: 0.45em 0 0.3em;
+      line-height: 1.35;
+    }
     .bubble a { color: var(--link); }
     .msg.user .bubble a { color: var(--link-on-user); }
     button.mention,
@@ -1211,14 +1306,21 @@
     <div class="stage">
       <div class="window" id="app">
         <div class="titlebar">
-          <div class="dots"><i class="r"></i><i class="y"></i><i class="g"></i></div>
-          <div class="grow"></div>
+          <div class="titlebar-inset titlebar-leading">
+            <div class="dots"><i class="r"></i><i class="y"></i><i class="g"></i></div>
+          </div>
+          <div class="titlebar-title">OpenGrokBot</div>
+          <div class="titlebar-inset titlebar-trailing">
+          <button class="comp-btn" id="harnessBtn" type="button" hidden title="Switch engine" aria-label="Switch engine">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 2v2M15 2v2M9 20v2M15 20v2M20 9h2M20 15h2M2 9h2M2 15h2"/></svg>
+          </button>
           <button class="comp-btn" id="compBtn" title="Agent Computer">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="5" width="18" height="12" rx="2"/><rect x="8" y="19" width="8" height="2" rx="1"/></svg>
           </button>
           <button class="comp-btn" id="setBtn" title="Settings">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9c0 .7.4 1.3 1.1 1.5H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
           </button>
+          </div>
         </div>
         <div class="body">
           <aside class="sidebar">
@@ -1415,6 +1517,6 @@
     </div>
   </div>
 
-<script src="/app.js?v=ui22"></script>
+<script src="/app.js?v=ui35"></script>
 </body>
 </html>

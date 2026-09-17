@@ -148,7 +148,27 @@ export async function startServer(): Promise<void> {
     async (req, reply) => {
       const bot = await getBot(req.params.id);
       if (!bot) return reply.code(404).send({ error: "unknown bot" });
-      const messages = await fulfillApproval(bot.id, req.body?.decision ?? "deny", req.body?.messageId);
+      const decision = req.body?.decision ?? "deny";
+      if (decision === "allow" || decision === "always") {
+        reply.hijack();
+        reply.raw.writeHead(200, {
+          "Content-Type": "text/event-stream; charset=utf-8",
+          "Cache-Control": "no-cache, no-transform",
+          Connection: "keep-alive",
+        });
+        const messages = await fulfillApproval(
+          bot.id,
+          decision,
+          req.body?.messageId,
+          (event) => sseWrite(reply, event),
+        );
+        if (messages.length === 0) {
+          reply.raw.write(`data: ${JSON.stringify({ type: "error", botId: bot.id, error: "no pending approval" })}\n\n`);
+        }
+        reply.raw.end();
+        return;
+      }
+      const messages = await fulfillApproval(bot.id, decision, req.body?.messageId);
       if (messages.length === 0) return reply.code(404).send({ error: "no pending approval" });
       return { messages };
     },

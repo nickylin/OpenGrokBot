@@ -37,6 +37,53 @@ Keys stay on this machine in `~/.opengrokbot/settings.json`. Do not commit them.
 
 Defaults bind to `127.0.0.1:3088`. Override with `OPENGROKBOT_HOST`, `OPENGROKBOT_PORT`, or `OPENGROKBOT_HOME`. `pnpm dev` watches files. `pnpm typecheck` runs `tsc --noEmit`.
 
+## Desktop app (macOS)
+
+OpenGrokBot ships an unsigned Electron `.dmg` for local use. The desktop app starts the Fastify server for you and opens the UI in a window.
+
+**Prerequisites:** macOS, Node 20+ on `PATH` (the packaged app spawns your system `node`), pnpm.
+
+**Build a DMG:**
+
+```bash
+pnpm install
+pnpm build:dmg
+```
+
+Artifacts land in `release/` (for example `release/OpenGrokBot-0.2.0.dmg`, `release/OpenGrokBot-0.2.0-mac.zip`, and `release/mac/OpenGrokBot.app`).
+
+If `electron-builder` hangs on the DMG step, the app bundle and zip are still valid. Create a DMG manually:
+
+```bash
+hdiutil create -volname "OpenGrokBot" -srcfolder release/mac/OpenGrokBot.app -ov -format UDZO release/OpenGrokBot-0.2.0.dmg
+```
+
+**Install an unsigned build:** macOS may block the first launch. Right-click **OpenGrokBot → Open**, or run:
+
+```bash
+xattr -cr /Applications/OpenGrokBot.app
+```
+
+**Dev with Electron:**
+
+```bash
+pnpm dev:desktop
+```
+
+This runs the TypeScript dev server and opens Electron once `/api/health` responds.
+
+**Limitations (v0.2):** requires Node 20+ on `PATH` (the app spawns your system `node` to run the server). No code signing, auto-update, or menu-bar tray. CLI harnesses (`codex`, `cursor`, `dsh`) still need separate install on the machine. User data stays in `~/.opengrokbot/` either way.
+
+### Background notifications
+
+When the tab or Electron window is in the background, OpenGrokBot can alert you when:
+
+- a Bot finishes a reply
+- a Bot needs approval (`Blocked`)
+- a scheduled routine starts (via roster polling)
+
+Turn this on in **Settings → Agent → Background notifications**. The browser or macOS will ask for permission the first time. Click a notification to focus the app and open that Bot. Notifications are skipped while you are actively viewing the app in the foreground.
+
 ## Same Bot. Your computer.
 
 Official Grok Bot ([docs](https://docs.x.ai/grok-bot/overview)): named teammates with jobs and compounding context. Each one works a persistent computer — browser, filesystem, terminal — and messages you like iMessage, not like a chatbot dump.
@@ -51,34 +98,39 @@ Official Grok Bot ([docs](https://docs.x.ai/grok-bot/overview)): named teammates
 | Setup | A message, not a workflow builder | Same |
 | Price | Cursor / SuperGrok plan | Free. MIT |
 
-## What v0.1 ships
+## What v0.2 ships
 
 This is a working local app, not a README stub.
 
 **In this release**
 
+- **macOS desktop app** — unsigned Electron `.dmg`; spawns the local server and opens the UI in a window
 - Named roster plus Create a Bot (color, shape, expression)
 - **Harness switcher** — OpenAI-compatible HTTP, Ollama, Codex CLI, Cursor Agent, or DeepSeek Harness, with install hints for missing local CLIs
 - **Avatars** — 8 shapes and 8 expressions; lifecycle motion (idle / thinking / working / waiting / blocked / done) on the face, not a separate spinner
+- **Token streaming** — OpenAI-compatible harness streams reply text into the bubble as tokens arrive (CLI harnesses still return full replies)
 - 1:1 and group threads; group messages route through a coordinator Bot and mirror member replies into the thread
 - `@` mentions (clickable in chat) and `message_bot` handoffs shown as system strips, not user bubbles
 - **Markdown in bubbles** — tables, horizontal rules, headings, lists, bold, inline code, fenced blocks, links
 - Per-Bot markdown memory and a shared workspace on disk
-- Shell commands behind Allow once / Always allow / Deny
+- Shell commands behind Allow once / Always allow / Deny; **Allow resumes the agent loop** with command output
+- **`/routine` picker** — type `/` in the composer to fire a Bot's routine prompt
+- **Scheduled routines** — in-process scheduler fires enabled routines while the app is open (Settings → Agent → Host scheduler)
+- **Background notifications** — browser or macOS alerts when a reply finishes, approval is needed, or a routine starts
 - Settings → Agent: clear roster or reset to the starter bots in `data/bots/`
 - Computer pane as a status preview (purple icon while active, time-of-day wallpaper), not a live VM
 
 **Not yet**
 
 - Real browser / computer-use
-- Scheduled routines (shown on the Bot, not fired)
+- launchd / login-item scheduler when the app is closed
 - MCP connectors
 - Auto-review model
 - Work while the laptop sleeps
 
 The rest of the official list below is the north star, not a claim that every item is wired today.
 
-<img src="./docs/map.svg" alt="v0.1 map: roster, chat, memory and files, shell approvals" width="640" />
+<img src="./docs/map.svg" alt="v0.2 map: roster, chat, memory and files, shell approvals" width="640" />
 
 ## UI and presence
 
@@ -142,7 +194,7 @@ Same prompt the official docs start with:
 
 > Pull this week’s pipeline review list. Skip anyone already in an active sequence. Research the top five accounts, draft outreach in my voice, and leave me drafts to approve by tomorrow morning.
 
-Tell it what to do, where to work, what finished looks like. Correct it. Turn the stable path into a routine — when the scheduler exists.
+Tell it what to do, where to work, what finished looks like. Correct it. Turn the stable path into a routine and pin it on that Bot.
 
 ## The one thing we will not copy
 

@@ -1,0 +1,37 @@
+appId: io.github.nickylin.opengrokbot
+productName: OpenGrokBot
+copyright: Copyright © 2026 OpenGrokBot contributors
+
+directories:
+  output: release
+  buildResources: build
+
+files:
+  - desktop/**/*
+  - package.json
+
+extraResources:
+  - from: .pack/server
+    to: server
+    filter:
+      - "**/*"
+
+electronVersion: "41.3.0"
+electronDist: .cache/electron-dist
+
+electronDownload:
+  mirror: https://npmmirror.com/mirrors/electron/
+
+mac:
+  category: public.app-category.developer-tools
+  target:
+    - dmg
+    - zip
+  icon: icon.png
+
+dmg:
+  title: OpenGrokBot
+
+asar: true
+npmRebuild: false
+publish: null

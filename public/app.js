@@ -49,7 +49,7 @@ function featureTransform(shape) {
     case "teardrop":
       return "translate(32 34) scale(0.82) translate(-32 -30)";
     case "pill":
-      return "translate(32 32) scale(0.84) translate(-32 -30)";
+      return "translate(32 32) scale(0.9) translate(-32 -30)";
     case "oval":
       return "translate(32 32) scale(0.9) translate(-32 -29)";
     default:
@@ -62,6 +62,16 @@ function featureTransformAttr(shape) {
   return t ? ` transform="${t}"` : "";
 }
 
+/** Horizontal-only squeeze for pill silhouette (half width, same height). */
+function shapeOutlineTransform(shape) {
+  return asShape(shape) === "pill" ? "translate(32 32) scale(0.5 1) translate(-32 -32)" : "";
+}
+
+function shapeOutlineTransformAttr(shape) {
+  const t = shapeOutlineTransform(shape);
+  return t ? ` transform="${t}"` : "";
+}
+
 function shapePath(shape) {
   switch (asShape(shape)) {
     case "oval":
@@ -69,7 +79,7 @@ function shapePath(shape) {
     case "squircle":
       return "M24 11 H40 Q52 11 52 23 V41 Q52 53 40 53 H24 Q12 53 12 41 V23 Q12 11 24 11 Z";
     case "pill":
-      return "M8 18 H56 A14 14 0 0 1 56 46 H8 A14 14 0 0 1 8 18 Z";
+      return "M9 12 H55 A20 20 0 0 1 55 52 H9 A20 20 0 0 1 9 12 Z";
     case "triangle":
       return "M32 8 C38 8 53 46 54 51 C54 55 10 55 10 51 C10 46 26 8 32 8 Z";
     case "hexagon":
@@ -125,8 +135,7 @@ function officialEyes(shape) {
       <path class="eye" d="M43 22l-6 5" fill="none" stroke="#111" stroke-width="3" stroke-linecap="round"/>
     </g>`;
   }
-  const shift = id === "pill" ? ' transform="translate(0,1)"' : "";
-  return `<g class="eyes"${shift}>
+  return `<g class="eyes">
     <path class="eye" d="M21 26l6 4" fill="none" stroke="#111" stroke-width="3" stroke-linecap="round"/>
     <path class="eye" d="M37 30l6-4" fill="none" stroke="#111" stroke-width="3" stroke-linecap="round"/>
   </g>`;
@@ -174,7 +183,7 @@ function shapeBall(shape, color) {
   if (id === "circle") {
     return `<circle class="ball" cx="32" cy="32" r="28" fill="${c}"/>`;
   }
-  return `<path class="ball" d="${shapePath(id)}" fill="${c}"/>`;
+  return `<path class="ball" d="${shapePath(id)}" fill="${c}"${shapeOutlineTransformAttr(id)}/>`;
 }
 
 function shapeClip(shape, color) {
@@ -184,7 +193,7 @@ function shapeClip(shape, color) {
   const inner =
     asShape(shape) === "circle"
       ? `<circle cx="32" cy="32" r="28"/>`
-      : `<path d="${d}"/>`;
+      : `<path d="${d}"${shapeOutlineTransformAttr(shape)}/>`;
   return { clipId, defs: `<clipPath id="${clipId}">${inner}</clipPath>`, ref: `url(#${clipId})` };
 }
 
@@ -297,6 +306,7 @@ const defaultCfg = {
   requireSend: "on",
   profileName: "You",
   profileColor: "#E8B86D",
+  notifications: "on",
 };
 
 const PROFILE_COLORS = ["#E8B86D", "#5EC8B5", "#F5A54A", "#4A6FA5", "#8B6CF7", "#3D8BFF", "#E07A3D"];
@@ -309,11 +319,26 @@ let cfg = { ...defaultCfg };
 let setPane = "harness";
 let query = "";
 let sending = false;
+let streamDraft = null;
 let lastTool = "";
 let saveTimer = 0;
 let harnesses = [];
 let createLook = { color: BOT_COLORS[0], face: "smile", shape: "circle" };
 let groupPicks = new Set();
+let rosterSnapshot = new Map();
+let notifPollTimer = 0;
+const notifLastAt = new Map();
+const NOTIF_ICON = "/favicon.svg";
+const NOTIF_DEBOUNCE_MS = 4000;
+const NOTIF_POLL_MS = 20_000;
+
+const HARNESS_LABELS = {
+  "openai-compatible": "OpenAI compatible",
+  ollama: "Ollama",
+  codex: "Codex CLI",
+  cursor: "Cursor Agent",
+  dsh: "DeepSeek Harness",
+};
 
 function esc(s) {
   return String(s ?? "")
@@ -377,6 +402,239 @@ function toast(msg) {
   setTimeout(() => t.classList.remove("show"), 1800);
 }
 
+function notificationsOn() {
+  return cfg.notifications !== "off";
+}
+
+function notificationSupported() {
+  return typeof Notification !== "undefined";
+}
+
+function notificationPermission() {
+  return notificationSupported() ? Notification.permission : "denied";
+}
+
+function notificationsReady() {
+  return notificationsOn() && notificationSupported() && notificationPermission() === "granted";
+}
+
+function appInBackground() {
+  return document.hidden || !document.hasFocus();
+}
+
+function shouldNotifyForBot(botId) {
+  if (!notificationsReady()) return false;
+  if (!appInBackground()) return false;
+  if (botId === selected && document.hasFocus() && !document.hidden) return false;
+  return true;
+}
+
+function plainPreview(text, max = 140) {
+  const t = String(text ?? "")
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    .replace(/\*([^*]+)\*/g, "$1")
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!t) return "";
+  return t.length > max ? `${t.slice(0, max - 1)}…` : t;
+}
+
+function approvalPreview(content) {
+  try {
+    const parsed = JSON.parse(String(content ?? ""));
+    return plainPreview(parsed.body || parsed.title || "Needs your approval");
+  } catch {
+    return plainPreview(content || "Needs your approval");
+  }
+}
+
+function botById(id) {
+  return bots.find((b) => b.id === id);
+}
+
+function previewForBot(botId) {
+  if (botId === selected && messages.length) {
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+      const m = messages[i];
+      if (m.role === "assistant" && m.kind !== "approval") {
+        const p = plainPreview(m.content);
+        if (p) return p;
+      }
+    }
+  }
+  const b = botById(botId);
+  return plainPreview(b?.preview || "");
+}
+
+function focusAppWindow() {
+  window.focus();
+}
+
+function queueNotification(botId, kind, title, body) {
+  if (!shouldNotifyForBot(botId)) return;
+  const key = `${botId}:${kind}`;
+  const now = Date.now();
+  const last = notifLastAt.get(key) ?? 0;
+  if (now - last < NOTIF_DEBOUNCE_MS) return;
+  notifLastAt.set(key, now);
+
+  try {
+    const n = new Notification(title, {
+      body: body || "Open OpenGrokBot",
+      icon: NOTIF_ICON,
+      tag: key,
+      silent: false,
+    });
+    n.onclick = () => {
+      focusAppWindow();
+      n.close();
+      if (botId) void selectBot(botId);
+    };
+  } catch {
+    /* permission revoked or unsupported */
+  }
+}
+
+function notifyBlocked(botId, body) {
+  const bot = botById(botId);
+  if (!bot) return;
+  queueNotification(botId, "blocked", `${bot.name} needs approval`, body || "Tap to review.");
+}
+
+function notifyDone(botId) {
+  const bot = botById(botId);
+  if (!bot) return;
+  queueNotification(botId, "done", `${bot.name} finished`, previewForBot(botId) || "Reply ready");
+}
+
+function notifyRoutine(botId, label) {
+  const bot = botById(botId);
+  if (!bot) return;
+  queueNotification(botId, "routine", `${bot.name} · routine`, label || "Scheduled routine started");
+}
+
+function syncRosterSnapshot(rows = bots) {
+  rosterSnapshot = new Map(
+    rows.map((b) => [b.id, { status: b.status, preview: b.preview || "", time: b.time || "" }]),
+  );
+}
+
+function botWasActive(status) {
+  return status === "thinking" || status === "working" || status === "waiting";
+}
+
+function handleRosterNotificationDiff(rows) {
+  if (!notificationsReady() || !appInBackground()) return;
+  for (const bot of rows) {
+    const prev = rosterSnapshot.get(bot.id);
+    if (!prev) continue;
+    if (prev.status !== "blocked" && bot.status === "blocked") {
+      notifyBlocked(bot.id, plainPreview(bot.preview) || "Needs your approval");
+      continue;
+    }
+    if (botWasActive(prev.status) && !botWasActive(bot.status) && bot.status !== "blocked") {
+      notifyDone(bot.id);
+    }
+  }
+}
+
+async function pollRosterNotifications() {
+  if (!notificationsOn() || !appInBackground()) return;
+  try {
+    const data = await api("/api/bots");
+    const rows = data.bots || [];
+    handleRosterNotificationDiff(rows);
+    bots = rows;
+    if (selected && !bots.some((b) => b.id === selected) && bots[0]) selected = bots[0].id;
+    syncRosterSnapshot(rows);
+    renderRoster();
+    if (selected) renderChat();
+  } catch {
+    /* ignore transient poll errors */
+  }
+}
+
+function startNotificationPoll() {
+  clearInterval(notifPollTimer);
+  if (!notificationsOn()) return;
+  notifPollTimer = window.setInterval(() => {
+    void pollRosterNotifications();
+  }, NOTIF_POLL_MS);
+}
+
+async function requestNotificationPermission() {
+  if (!notificationSupported()) {
+    toast("Notifications are not supported here");
+    return false;
+  }
+  if (Notification.permission === "granted") return true;
+  if (Notification.permission === "denied") {
+    toast("Notifications blocked — allow them in System Settings or the browser");
+    return false;
+  }
+  try {
+    const perm = await Notification.requestPermission();
+    if (perm === "granted") {
+      toast("Notifications enabled");
+      return true;
+    }
+    toast("Notifications not allowed");
+    return false;
+  } catch {
+    toast("Could not request notification permission");
+    return false;
+  }
+}
+
+function renderNotificationPermHint() {
+  const el = $("notifPermHint");
+  if (!el) return;
+  if (!notificationSupported()) {
+    el.textContent = "This browser does not support notifications.";
+    return;
+  }
+  if (!notificationsOn()) {
+    el.textContent = "";
+    return;
+  }
+  switch (notificationPermission()) {
+    case "granted":
+      el.textContent = "Permission granted. You will be notified while this tab or window is in the background.";
+      break;
+    case "denied":
+      el.textContent = "Permission denied. Enable notifications in macOS System Settings or your browser site settings.";
+      break;
+    default:
+      el.textContent = "Turn On above to request permission the first time.";
+      break;
+  }
+}
+
+function handleNotificationEvent(event) {
+  if (!event?.botId || !notificationsOn()) return;
+  if (event.type === "status" && event.status === "blocked") {
+    notifyBlocked(event.botId, "Tap to review the approval card.");
+    return;
+  }
+  if (event.type === "message") {
+    const m = event.message;
+    if (m?.kind === "approval" && !m.decision) {
+      notifyBlocked(event.botId, approvalPreview(m.content));
+      return;
+    }
+    if (m?.kind === "routine" && shouldNotifyForBot(event.botId)) {
+      notifyRoutine(event.botId, m.routineName ? `/${m.routineName}` : plainPreview(m.content));
+    }
+    return;
+  }
+  if (event.type === "done") {
+    window.setTimeout(() => notifyDone(event.botId), 320);
+  }
+}
+
 async function api(path, opts = {}) {
   const res = await fetch(path, {
     headers: { "Content-Type": "application/json", ...(opts.headers || {}) },
@@ -425,22 +683,98 @@ function faceShell(color, face, st, seed, shape) {
   return `<div class="avatar ${st}" style="${motion}"><div class="head">${faces(color, face, shape, life)}</div></div>`;
 }
 
+const GROUP_AVATAR_CAP = 2;
+
 function avatarEl(bot) {
   if (!bot) return faceShell("#8e8e93", "smile", "idle", "default", "circle");
   const st = statusClass(bot.status);
   if (bot.kind === "group") {
     const members = (bot.members ?? []).map((id) => bots.find((b) => b.id === id)).filter(Boolean);
-    const shells = (members.length ? members : [{ id: bot.id, color: bot.color, face: bot.face, shape: bot.shape }]).map(
+    const list = members.length ? members : [{ id: bot.id, color: bot.color, face: bot.face, shape: bot.shape }];
+    const visible = list.slice(0, GROUP_AVATAR_CAP);
+    const overflow = list.length - visible.length;
+    const shells = visible.map(
       (m) =>
         `<div class="avatar ${st}" style="${avatarMotionVars(m.id)}"><div class="head">${faces(m.color, m.face, m.shape, st !== "idle" ? st : undefined)}</div></div>`,
     );
-    return `<div class="stack ${st}" style="${avatarMotionVars(bot.id)}">${shells.join("")}</div>`;
+    const badge = overflow > 0 ? `<span class="stack-more" aria-hidden="true">+${overflow}</span>` : "";
+    return `<div class="stack ${st}" style="${avatarMotionVars(bot.id)}">${shells.join("")}${badge}</div>`;
   }
   return faceShell(bot.color, bot.face, st, bot.id, bot.shape);
 }
 
 function currentBot() {
   return bots.find((b) => b.id === selected) || bots[0];
+}
+
+function lifecycleFromStatus(status) {
+  switch (status) {
+    case "thinking":
+      return "Thinking";
+    case "working":
+      return "Working";
+    case "waiting":
+      return "Waiting";
+    case "blocked":
+      return "Blocked";
+    default:
+      return "";
+  }
+}
+
+function normalizeAction(action, status) {
+  if (!action || action === "Idle") return lifecycleFromStatus(status);
+
+  let a = String(action).trim();
+  if (/^needs approval$/i.test(a)) return "Blocked";
+
+  const memberPhase = a.match(/^(.+?)\s·\s(Working|Thinking|Waiting|Blocked)$/i);
+  if (memberPhase) {
+    const phase = memberPhase[2];
+    return `${memberPhase[1].trim()} · ${phase.charAt(0).toUpperCase()}${phase.slice(1).toLowerCase()}`;
+  }
+
+  const memberEllipsis = a.match(/^(.+?)…$/);
+  if (memberEllipsis) return `${memberEllipsis[1].trim()} · Working`;
+
+  if (/^running\b/i.test(a)) return "Working";
+  if (/^tool round\s+\d+$/i.test(a)) return "Working";
+
+  if (/^(Working|Thinking|Waiting|Blocked)$/i.test(a)) {
+    return a.charAt(0).toUpperCase() + a.slice(1).toLowerCase();
+  }
+
+  return lifecycleFromStatus(status) || a;
+}
+
+function displayStatus(action, status, { ellipsis = false } = {}) {
+  const base = normalizeAction(action, status);
+  if (!base) return "";
+  if (!ellipsis) return base;
+  if (base.includes(" · ")) {
+    return base.replace(/\s·\s(Working|Thinking|Waiting|Blocked)$/i, " · $1…");
+  }
+  return `${base}…`;
+}
+
+function harnessDisplayLabel(id) {
+  const row = harnesses.find((h) => h.id === id);
+  return row?.label || HARNESS_LABELS[id] || id;
+}
+
+function renderHarnessControl() {
+  const btn = $("harnessBtn");
+  if (!btn) return;
+  if (!currentBot()) {
+    btn.hidden = true;
+    return;
+  }
+  const id = cfg.harness || "openai-compatible";
+  const label = harnessDisplayLabel(id);
+  const tip = `${label} (${id}) — click to switch`;
+  btn.title = tip;
+  btn.setAttribute("aria-label", tip);
+  btn.hidden = false;
 }
 
 function renderRoster() {
@@ -452,9 +786,9 @@ function renderRoster() {
   $("roster").innerHTML = rows
     .map(
       (b) => `
-    <button class="row ${b.id === selected ? "active" : ""}" data-id="${esc(b.id)}" aria-label="${esc(b.name)}${b.action && b.action !== "Idle" ? ` · ${esc(b.action)}` : ""}">
+    <button class="row ${b.id === selected ? "active" : ""}" data-id="${esc(b.id)}" aria-label="${esc(b.name)}${b.action && b.action !== "Idle" ? ` · ${esc(displayStatus(b.action, b.status))}` : ""}">
       ${avatarEl(b)}
-      <span class="tip" aria-hidden="true">${esc(b.action || "Idle")}</span>
+      <span class="tip" aria-hidden="true">${esc(displayStatus(b.action, b.status) || "Idle")}</span>
       <div class="meta">
         <div class="name">${esc(b.name)} ${
           b.status === "blocked"
@@ -471,14 +805,7 @@ function renderRoster() {
     .join("");
 }
 
-function bubbleHtml(text) {
-  const fences = [];
-  let src = String(text ?? "");
-  src = src.replace(/```[\w]*\n?([\s\S]*?)```/g, (_, code) => {
-    const i = fences.length;
-    fences.push(`<pre><code>${esc(code.replace(/\n$/, ""))}</code></pre>`);
-    return `\u0000F${i}\u0000`;
-  });
+function inlineMarkdown(src) {
   let html = esc(src);
   html = html.replace(/`([^`]+)`/g, "<code>$1</code>");
   html = html.replace(/\*\*([\s\S]+?)\*\*/g, "<strong>$1</strong>");
@@ -488,9 +815,77 @@ function bubbleHtml(text) {
     /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,
     '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>',
   );
-  html = linkMentions(html);
-  html = html.replace(/\n/g, "<br>");
-  return html.replace(/\u0000F(\d+)\u0000/g, (_, i) => fences[Number(i)]);
+  return linkMentions(html);
+}
+
+function isTableSep(line) {
+  return /^\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?$/.test(line.trim());
+}
+
+function parseTableRow(line) {
+  const trimmed = line.trim();
+  if (!trimmed.includes("|")) return null;
+  const inner = trimmed.replace(/^\|/, "").replace(/\|$/, "");
+  return inner.split("|").map((c) => c.trim());
+}
+
+function bubbleHtml(text) {
+  const fences = [];
+  let src = String(text ?? "");
+  src = src.replace(/```[\w]*\n?([\s\S]*?)```/g, (_, code) => {
+    const i = fences.length;
+    fences.push(`<pre><code>${esc(code.replace(/\n$/, ""))}</code></pre>`);
+    return `\u0000F${i}\u0000`;
+  });
+
+  const blocks = src.split(/\n\n+/);
+  const out = [];
+
+  for (const block of blocks) {
+    const lines = block.split("\n");
+    if (lines.length >= 2 && isTableSep(lines[1]) && parseTableRow(lines[0])) {
+      const head = parseTableRow(lines[0]) ?? [];
+      const body = lines.slice(2).map(parseTableRow).filter(Boolean);
+      const th = head.map((c) => `<th>${inlineMarkdown(c)}</th>`).join("");
+      const rows = body
+        .map((row) => `<tr>${row.map((c) => `<td>${inlineMarkdown(c)}</td>`).join("")}</tr>`)
+        .join("");
+      out.push(`<table><thead><tr>${th}</tr></thead><tbody>${rows}</tbody></table>`);
+      continue;
+    }
+
+    const trimmed = block.trim();
+    if (/^(-{3,}|\*{3,}|_{3,})$/.test(trimmed)) {
+      out.push("<hr>");
+      continue;
+    }
+    if (/^#{1,3}\s+/.test(trimmed)) {
+      const level = trimmed.match(/^#+/)[0].length;
+      const body = trimmed.replace(/^#{1,3}\s+/, "");
+      out.push(`<h${level}>${inlineMarkdown(body)}</h${level}>`);
+      continue;
+    }
+    if (/^[-*]\s+/.test(trimmed)) {
+      const items = lines
+        .filter((l) => /^[-*]\s+/.test(l.trim()))
+        .map((l) => `<li>${inlineMarkdown(l.trim().replace(/^[-*]\s+/, ""))}</li>`)
+        .join("");
+      out.push(`<ul>${items}</ul>`);
+      continue;
+    }
+    if (/^\d+\.\s+/.test(trimmed)) {
+      const items = lines
+        .filter((l) => /^\d+\.\s+/.test(l.trim()))
+        .map((l) => `<li>${inlineMarkdown(l.trim().replace(/^\d+\.\s+/, ""))}</li>`)
+        .join("");
+      out.push(`<ol>${items}</ol>`);
+      continue;
+    }
+
+    out.push(`<p>${inlineMarkdown(block).replace(/\n/g, "<br>")}</p>`);
+  }
+
+  return out.join("").replace(/\u0000F(\d+)\u0000/g, (_, i) => fences[Number(i)]);
 }
 
 function looksLikeClientDump(s) {
@@ -548,7 +943,10 @@ function renderMessage(m, fresh) {
     return renderIncomingHandoff(m, enter);
   }
   if (kind === "handoff") return `<div class="handoff${enter}">${linkMentions(esc(m.content))}</div>`;
-  if (kind === "routine") return `<div class="routine-chip${enter}">${linkMentions(esc(m.content))}</div>`;
+  if (kind === "routine") {
+    const label = m.routineName ? `/${m.routineName}` : m.content.split("\n")[0];
+    return `<div class="routine-chip${enter}">${linkMentions(esc(label))}</div>`;
+  }
   if (kind === "system" || looksLikeClientDump(m.content)) {
     return `<div class="sys${enter}">${linkMentions(esc(systemBubbleText(m.content)))}</div>`;
   }
@@ -595,17 +993,33 @@ function renderMessage(m, fresh) {
 
 function renderTyping() {
   if (!sending) return "";
+  if (streamDraft?.text) return "";
   const b = currentBot();
-  const action = b?.action && b.action !== "Idle" ? b.action : "Thinking";
-  return `<div class="typing" id="typing">${avatarEl(b)}<span>${esc(action)}</span></div>`;
+  const action = displayStatus(b?.action, b?.status, { ellipsis: false }) || "Thinking";
+  return `<div class="typing" id="typing" aria-live="polite" aria-label="${esc(action)}…">${avatarEl(b)}<span class="typing-copy"><span class="typing-label">${esc(action)}</span><span class="typing-dots" aria-hidden="true"><i></i><i></i><i></i></span></span></div>`;
+}
+
+function renderStreamingBubble(draft) {
+  const b = currentBot();
+  const inGroup = b?.kind === "group";
+  const speaker = draft.fromBotId ? bots.find((x) => x.id === draft.fromBotId) : b;
+  const head =
+    inGroup && speaker
+      ? `<div class="msg-head"><span class="msg-av">${faces(speaker.color, speaker.face, speaker.shape)}</span><span class="msg-who">${esc(speaker.name)}</span></div>`
+      : "";
+  return `<div class="msg bot fresh streaming">${head}<div class="bubble">${bubbleHtml(draft.text)}</div></div>`;
 }
 
 function renderThread(opts = {}) {
   const lastId = messages[messages.length - 1]?.id;
+  const draft =
+    streamDraft && streamDraft.botId === selected && streamDraft.text
+      ? renderStreamingBubble(streamDraft)
+      : "";
   $("thread").innerHTML =
     messages
       .map((m) => renderMessage(m, Boolean(opts.fresh && m.id === lastId)))
-      .join("") + renderTyping();
+      .join("") + draft + renderTyping();
   $("thread").scrollTop = $("thread").scrollHeight;
 }
 
@@ -741,7 +1155,11 @@ function renderChat(opts = {}) {
   $("headAv").innerHTML = avatarEl(b);
   $("headName").textContent = b.name;
   $("headSub").textContent = b.title;
-  $("elapsed").textContent = b.status && b.status !== "idle" && b.action && b.action !== "Idle" ? b.action : "";
+  $("elapsed").textContent =
+    b.status && b.status !== "idle" && b.action && b.action !== "Idle"
+      ? displayStatus(b.action, b.status)
+      : "";
+  renderHarnessControl();
   $("input").placeholder = `Message ${b.name}`;
   $("screenTitle").textContent = `${b.name}’s screen`;
   const routines = b.routines?.length
@@ -1202,9 +1620,18 @@ function renderSettings() {
   if (setPane === "agent") {
     body.innerHTML = `
       <div class="field">
+        <label>Background notifications</label>
+        <div class="seg">
+          <button data-seg="notifications" data-val="on">On</button>
+          <button data-seg="notifications" data-val="off">Off</button>
+        </div>
+        <div class="hint">Alert when a Bot finishes, needs approval, or a routine runs while this tab or window is in the background. Works in the browser and the macOS desktop app.</div>
+        <div class="hint" id="notifPermHint"></div>
+      </div>
+      <div class="field">
         <label>Timezone</label>
         <input id="f-tz" value="${esc(cfg.timezone)}" />
-        <div class="hint">Clock for routines. Saved now; the scheduler is not wired in v0.1.</div>
+        <div class="hint">Clock for routines. When Host scheduler is on, enabled routines fire while this app is open.</div>
       </div>
       <div class="field">
         <label>Host scheduler</label>
@@ -1225,6 +1652,20 @@ function renderSettings() {
     `;
     bindFields({ "f-tz": "timezone" });
     bindSeg("scheduler", "scheduler");
+    bindSeg("notifications", "notifications");
+    document.querySelectorAll('[data-seg="notifications"]').forEach((btn) => {
+      btn.addEventListener("click", () => {
+        if (btn.dataset.val === "on") void requestNotificationPermission().then(() => renderNotificationPermHint());
+        else renderNotificationPermHint();
+        try {
+          localStorage.setItem("opengrokbot.notifications", btn.dataset.val);
+        } catch {
+          /* ignore */
+        }
+        startNotificationPoll();
+      });
+    });
+    renderNotificationPermHint();
     $("clearRoster")?.addEventListener("click", () => void clearRosterAction());
     $("resetRoster")?.addEventListener("click", () => void resetRosterAction());
   }
@@ -1306,6 +1747,7 @@ async function switchHarness(id) {
     await refreshHarnesses();
     renderSettings();
     renderAccount();
+    renderHarnessControl();
   } catch (err) {
     toast(err.message || "Could not switch harness");
     try {
@@ -1339,7 +1781,12 @@ function closeSettings() {
 
 async function loadRoster() {
   const data = await api("/api/bots");
-  bots = data.bots || [];
+  const rows = data.bots || [];
+  if (appInBackground() && notificationsReady() && rosterSnapshot.size) {
+    handleRosterNotificationDiff(rows);
+  }
+  bots = rows;
+  syncRosterSnapshot(bots);
   if (!bots.length) {
     selected = "";
     messages = [];
@@ -1359,6 +1806,7 @@ function renderEmptyChat() {
   $("headName").textContent = "No Bots yet";
   $("headSub").textContent = "Press + to build your roster";
   $("elapsed").textContent = "";
+  if ($("harnessBtn")) $("harnessBtn").hidden = true;
   $("input").placeholder = "Create a Bot first";
   $("thread").innerHTML =
     `<div class="sys">Your roster is empty. Use + to create Bots, or Settings → Agent → Reset to starter roster.</div>`;
@@ -1368,6 +1816,7 @@ function renderEmptyChat() {
 
 async function loadMessages() {
   if (!selected) return;
+  streamDraft = null;
   const data = await api(`/api/bots/${encodeURIComponent(selected)}/messages`);
   messages = data.messages || [];
   renderChat();
@@ -1377,12 +1826,14 @@ async function selectBot(id) {
   if (!id) {
     selected = "";
     messages = [];
+    streamDraft = null;
     renderRoster();
     renderEmptyChat();
     return;
   }
   selected = id;
   sending = false;
+  streamDraft = null;
   renderRoster();
   await loadMessages();
 }
@@ -1428,6 +1879,7 @@ async function resetRosterAction() {
 
 function applyEvent(event) {
   if (!event || !event.type) return;
+  handleNotificationEvent(event);
   if (event.type === "status") {
     const bot = bots.find((b) => b.id === event.botId);
     if (bot) {
@@ -1438,6 +1890,23 @@ function applyEvent(event) {
     }
     return;
   }
+  if (event.type === "delta") {
+    if (event.botId !== selected) return;
+    if (!streamDraft || streamDraft.botId !== event.botId) {
+      streamDraft = { botId: event.botId, fromBotId: event.fromBotId, text: "" };
+    }
+    streamDraft.text += event.text;
+    if (event.fromBotId) streamDraft.fromBotId = event.fromBotId;
+    renderThread({ fresh: true });
+    return;
+  }
+  if (event.type === "stream_clear") {
+    if (event.botId === selected) {
+      streamDraft = null;
+      renderThread();
+    }
+    return;
+  }
   if (event.type === "tool") {
     lastTool = event.name;
     if (event.botId === selected) renderChat();
@@ -1445,6 +1914,7 @@ function applyEvent(event) {
   }
   if (event.type === "message") {
     if (event.botId !== selected) return;
+    streamDraft = null;
     if (event.message.role === "user" && sending) {
       const already = messages.some((m) => m.role === "user" && m.content === event.message.content);
       if (already) return;
@@ -1454,10 +1924,12 @@ function applyEvent(event) {
     return;
   }
   if (event.type === "error") {
+    streamDraft = null;
     if (event.botId === selected) toast(event.error);
     return;
   }
   if (event.type === "done") {
+    streamDraft = null;
     sending = false;
     const bot = bots.find((b) => b.id === event.botId);
     if (bot && (bot.status === "thinking" || bot.status === "working" || bot.status === "waiting")) {
@@ -1503,17 +1975,38 @@ async function readSSE(res, onEvent) {
   }
 }
 
+function resolveRoutineClient(bot, text) {
+  const m = text.trim().match(/^\/([^\s/]+)(?:\s+([\s\S]*))?$/);
+  if (!m) return { content: text, kind: "text" };
+  const key = m[1].toLowerCase();
+  const routine = (bot.routines || []).find(
+    (r) =>
+      r.id.toLowerCase() === key ||
+      r.name.toLowerCase() === key ||
+      r.name.toLowerCase().replace(/\s+/g, "-") === key,
+  );
+  if (!routine) return { content: text, kind: "text" };
+  const tail = (m[2] || "").trim();
+  return {
+    content: tail ? `${routine.prompt}\n\n${tail}` : routine.prompt,
+    kind: "routine",
+    routineName: routine.name,
+  };
+}
+
 async function sendMessage(text) {
   const bot = currentBot();
   if (!bot || sending) return;
   sending = true;
   syncSendBtn();
+  const userLine = resolveRoutineClient(bot, text);
   messages.push({
     id: "local-" + Date.now(),
     role: "user",
-    content: text,
+    content: userLine.content,
     createdAt: new Date().toISOString(),
-    kind: "text",
+    kind: userLine.kind,
+    routineName: userLine.routineName,
   });
   bot.status = "thinking";
   bot.action = "Thinking";
@@ -1556,6 +2049,7 @@ function bindUi() {
     computer = "takeover";
     applyChrome();
   });
+  $("harnessBtn")?.addEventListener("click", () => openSettings("harness"));
   $("handBack").addEventListener("click", () => {
     computer = "preview";
     applyChrome();
@@ -1696,6 +2190,10 @@ function bindUi() {
     }
   });
   $("saveGroup")?.addEventListener("click", async () => {
+    if (groupPicks.size < 2) {
+      toast("Pick at least two Bots");
+      return;
+    }
     try {
       const name = ($("gName")?.value || "").trim() || "Group";
       const bot = await api("/api/bots", {
@@ -1728,14 +2226,32 @@ function bindUi() {
     const box = btn.closest(".approval");
     if (!box || box.classList.contains("done") || box.dataset.busy) return;
     box.dataset.busy = "1";
+    const decision = btn.dataset.act;
     try {
-      await api(`/api/bots/${encodeURIComponent(selected)}/approvals`, {
-        method: "POST",
-        body: JSON.stringify({ decision: btn.dataset.act, messageId: box.dataset.id }),
-      });
-      await loadMessages();
-      await loadRoster();
+      if (decision === "allow" || decision === "always") {
+        sending = true;
+        syncSendBtn();
+        const res = await fetch(`/api/bots/${encodeURIComponent(selected)}/approvals`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ decision, messageId: box.dataset.id }),
+        });
+        if (!res.ok) throw new Error(await res.text());
+        await readSSE(res, applyEvent);
+        await loadMessages();
+        await loadRoster();
+      } else {
+        await api(`/api/bots/${encodeURIComponent(selected)}/approvals`, {
+          method: "POST",
+          body: JSON.stringify({ decision, messageId: box.dataset.id }),
+        });
+        await loadMessages();
+        await loadRoster();
+      }
+      delete box.dataset.busy;
     } catch (err) {
+      sending = false;
+      syncSendBtn();
       delete box.dataset.busy;
       toast(err.message);
     }
@@ -1870,7 +2386,8 @@ function bindUi() {
     if (e.key === "Tab" || e.key === "Enter") {
       e.preventDefault();
       const item = pickerItems[pickerIndex];
-      insertPick(item.name, Boolean(item.schedule));
+      const token = activeToken($("input"));
+      insertPick(item.name, token?.kind === "skill");
       return;
     }
     if (e.key === "Escape") {
@@ -1945,6 +2462,14 @@ function bindUi() {
 async function boot() {
   bindUi();
   watchSystemAppearance();
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) void pollRosterNotifications();
+  });
+  window.addEventListener("blur", () => {
+    window.setTimeout(() => {
+      if (appInBackground()) void pollRosterNotifications();
+    }, 400);
+  });
   const mac = /Mac|iPhone|iPad/.test(navigator.platform);
   if ($("acctSetKbd")) $("acctSetKbd").textContent = mac ? "⌘," : "Ctrl+,";
   applyChrome();
@@ -1953,11 +2478,29 @@ async function boot() {
   } catch {
     cfg = { ...defaultCfg };
   }
+  try {
+    const stored = localStorage.getItem("opengrokbot.notifications");
+    if (stored === "on" || stored === "off") cfg.notifications = stored;
+  } catch {
+    /* ignore */
+  }
   applyAppearance();
   renderComposerExec();
   renderAccount();
+  startNotificationPoll();
+  try {
+    await refreshHarnesses();
+  } catch {
+    harnesses = [];
+  }
   await loadRoster();
   await loadMessages();
+  if (notificationsOn() && notificationPermission() === "default" && notificationSupported()) {
+    window.setTimeout(() => {
+      if (!appInBackground()) return;
+      void requestNotificationPermission();
+    }, 1200);
+  }
 }
 
 boot().catch((err) => toast(err.message));

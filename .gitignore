@@ -1,5 +1,11 @@
 node_modules/
 dist/
+release/
+dist-electron/
+.pack/
+.cache/
+build/icon.png
+*.dmg
 .DS_Store
 *.log
 .env

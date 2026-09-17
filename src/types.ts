@@ -28,6 +28,7 @@ export type Settings = {
   requireSend: OnOff;
   profileName: string;
   profileColor: string;
+  notifications: OnOff;
 };
 
 export type Routine = {
@@ -62,12 +63,15 @@ export type ChatMessage = {
   toolName?: string;
   kind?: "text" | "handoff" | "routine" | "approval" | "system";
   fromBotId?: string;
+  routineName?: string;
   decision?: ApprovalDecision;
 };
 
 export type AgentEvent =
   | { type: "status"; botId: string; status: BotStatus; action: string }
   | { type: "message"; botId: string; message: ChatMessage }
+  | { type: "delta"; botId: string; text: string; fromBotId?: string }
+  | { type: "stream_clear"; botId: string }
   | { type: "tool"; botId: string; name: string; input: string; output: string }
   | { type: "error"; botId: string; error: string }
   | { type: "done"; botId: string };
