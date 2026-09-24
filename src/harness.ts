@@ -22,6 +22,7 @@ export type HarnessInfo = {
   binary?: string;
   version?: string;
   install: HarnessInstall;
+  cliHint?: string;
 };
 
 export class HarnessSwitchError extends Error {
@@ -267,7 +268,8 @@ function catalog(): Record<
     },
     codex: {
       label: "Codex CLI",
-      blurb: "OpenAI Codex on this machine. Uses the login you already did in the CLI.",
+      blurb:
+        "OpenAI Codex on this machine. Uses the login you already did in the CLI. @mentions and team assignments fan out automatically; no message_bot tool.",
       kind: "cli",
       bins: ["codex"],
       versionArgs: ["--version"],
@@ -280,7 +282,8 @@ function catalog(): Record<
     },
     cursor: {
       label: "Cursor Agent",
-      blurb: "The Cursor CLI agent (`cursor-agent`), using the account already logged in on this Mac.",
+      blurb:
+        "The Cursor CLI agent (`cursor-agent`), using the account already logged in on this Mac. @mentions and team assignments fan out automatically; no message_bot tool.",
       kind: "cli",
       bins: [join(homedir(), ".local", "bin", "cursor-agent"), "cursor-agent"],
       versionArgs: [],
@@ -293,7 +296,8 @@ function catalog(): Record<
     },
     dsh: {
       label: "DeepSeek Harness",
-      blurb: "Official dsh profile. One-shot headless runs in the shared workspace.",
+      blurb:
+        "Official dsh profile. One-shot headless runs in the shared workspace. @mentions and team assignments fan out automatically; no message_bot tool.",
       kind: "cli",
       bins: ["dsh"],
       versionArgs: ["-V"],
@@ -337,6 +341,10 @@ export async function inspectHarness(id: HarnessId): Promise<HarnessInfo> {
     binary,
     version,
     install: meta.install,
+    cliHint:
+      meta.kind === "cli"
+        ? "CLI harness: handoffs are automatic for @mentions and team names; no message_bot tool."
+        : undefined,
   };
 }
 

@@ -762,6 +762,14 @@ function harnessDisplayLabel(id) {
   return row?.label || HARNESS_LABELS[id] || id;
 }
 
+function harnessCliHint(id) {
+  if (id === "codex" || id === "cursor" || id === "dsh") {
+    return "CLI harness: handoffs are automatic for @mentions and team names; no message_bot tool.";
+  }
+  const row = harnesses.find((h) => h.id === id);
+  return row?.cliHint || "";
+}
+
 function renderHarnessControl() {
   const btn = $("harnessBtn");
   if (!btn) return;
@@ -771,7 +779,10 @@ function renderHarnessControl() {
   }
   const id = cfg.harness || "openai-compatible";
   const label = harnessDisplayLabel(id);
-  const tip = `${label} (${id}) — click to switch`;
+  const cliHint = harnessCliHint(id);
+  const tip = cliHint
+    ? `${label} (${id}) — ${cliHint}`
+    : `${label} (${id}) — click to switch`;
   btn.title = tip;
   btn.setAttribute("aria-label", tip);
   btn.hidden = false;
@@ -1457,7 +1468,7 @@ function renderSettings() {
         <div class="field">
           <label>Subagent model</label>
           <input id="f-sub" value="${esc(cfg.subagentModel)}" placeholder="deepseek-chat" />
-          <div class="hint">Handoff subagents. A smaller or faster model is fine.</div>
+          <div class="hint">Model for teammate handoffs (message_bot). A smaller or faster model is fine.</div>
         </div>
       </div>
       <div class="field">
@@ -1507,11 +1518,16 @@ function renderSettings() {
       dsh: "DeepSeek Harness",
     };
     const blurbs = {
-      "openai-compatible": "Any OpenAI-compatible HTTP API.",
-      ollama: "Local models on this machine.",
-      codex: "Uses the Codex CLI login on this Mac.",
-      cursor: "Uses cursor-agent and the login on this Mac.",
-      dsh: "DeepSeek’s dsh CLI in the shared workspace.",
+      "openai-compatible": "Any OpenAI-compatible HTTP API. Chief can message_bot teammates.",
+      ollama: "Local models on this machine. Chief can message_bot teammates.",
+      codex: "Uses the Codex CLI login on this Mac. @mentions and team names fan out automatically.",
+      cursor: "Uses cursor-agent and the login on this Mac. @mentions and team names fan out automatically.",
+      dsh: "DeepSeek’s dsh CLI in the shared workspace. @mentions and team names fan out automatically.",
+    };
+    const cliHints = {
+      codex: "CLI harness: handoffs are automatic for @mentions; no message_bot tool.",
+      cursor: "CLI harness: handoffs are automatic for @mentions; no message_bot tool.",
+      dsh: "CLI harness: handoffs are automatic for @mentions; no message_bot tool.",
     };
     const rows = (harnesses.length ? harnesses : [{
       id: "openai-compatible",
@@ -1528,7 +1544,7 @@ function renderSettings() {
         .replace(/^dsh\s+/i, "")
         .trim();
       const meta = missing ? "Install" : on ? "On" : ver;
-      const blurb = on ? (blurbs[h.id] || h.blurb || "") : "";
+      const blurb = on ? [blurbs[h.id] || h.blurb || "", cliHints[h.id] || h.cliHint || ""].filter(Boolean).join(" ") : "";
       const install = missing
         ? `<div class="install" data-stop="1">
             <code>${esc(h.install?.command || "")}</code>

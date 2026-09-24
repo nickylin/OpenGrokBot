@@ -236,6 +236,58 @@ function findMentionedBots(text: string, roster: Bot[], selfId: string): Bot[] {
   });
 }
 
+const BOT_ASSIGNMENT_ALIASES: Record<string, RegExp[]> = {
+  sales: [
+    /销售(?:团队|部|outbound)?/i,
+    /sales(?:\s+team|\s+outbound)?/i,
+    /\boutbound\b/i,
+    /\bpipeline\b/i,
+    /客户跟进/i,
+  ],
+  inbox: [/收件箱|inbox|邮件(?:箱)?/i],
+  acct: [/account(?:\s+manager)?/i, /客户(?:经理|管理)/i, /账户管理/i],
+  talent: [/talent(?:\s+scout)?/i, /招聘|人才|candidate/i],
+  exp: [/expense|报销|差旅/i],
+};
+
+function looksLikeTaskAssignment(text: string): boolean {
+  return /(?:分配|交给|指派|让\s*(?:@)?|assign(?:\s+to)?|delegate|hand\s*off|交给)/i.test(text);
+}
+
+function findBotsByAssignmentKeywords(text: string, roster: Bot[], selfId: string): Bot[] {
+  if (!looksLikeTaskAssignment(text)) return [];
+  const byId = new Map(roster.filter((b) => b.kind !== "group").map((b) => [b.id, b]));
+  const hits = new Set<string>();
+  for (const [id, patterns] of Object.entries(BOT_ASSIGNMENT_ALIASES)) {
+    if (id === selfId) continue;
+    const bot = byId.get(id);
+    if (!bot) continue;
+    if (patterns.some((p) => p.test(text))) hits.add(id);
+  }
+  for (const b of roster) {
+    if (b.kind === "group" || b.id === selfId || hits.has(b.id)) continue;
+    const namePat = new RegExp(escapeRegExp(b.name).replace(/\s+/g, "\\s*"), "i");
+    const titlePat = new RegExp(escapeRegExp(b.title).replace(/\s+/g, "\\s*"), "i");
+    if (namePat.test(text) || titlePat.test(text)) hits.add(b.id);
+  }
+  return [...hits].map((id) => byId.get(id)).filter((b): b is Bot => Boolean(b));
+}
+
+function assignmentTargets(text: string, roster: Bot[], selfId: string): Bot[] {
+  const out: Bot[] = [];
+  const seen = new Set<string>();
+  for (const b of [...findMentionedBots(text, roster, selfId), ...findBotsByAssignmentKeywords(text, roster, selfId)]) {
+    if (seen.has(b.id)) continue;
+    seen.add(b.id);
+    out.push(b);
+  }
+  return out;
+}
+
+function isCliHarnessId(harness: ReturnType<typeof inferHarness>): boolean {
+  return harness === "codex" || harness === "cursor" || harness === "dsh";
+}
+
 function findUnknownMentions(text: string, roster: Bot[]): string[] {
   const known = new Set(
     roster.filter((b) => b.kind !== "group").map((b) => b.name.toLowerCase()),
@@ -251,7 +303,7 @@ function findUnknownMentions(text: string, roster: Bot[]): string[] {
   return unknown;
 }
 
-async function rosterBlock(selfId: string, group?: Bot | null): Promise<string> {
+async function rosterBlock(selfId: string, group?: Bot | null, isCli = false): Promise<string> {
   const roster = await listBots();
   const byId = new Map(roster.map((b) => [b.id, b]));
   const parts: string[] = [];
@@ -265,7 +317,9 @@ async function rosterBlock(selfId: string, group?: Bot | null): Promise<string> 
       });
     if (lines.length) {
       parts.push(
-        `Group "${group.name}" members (live status):\n${lines.join("\n")}\nUse message_bot with their id to assign work or pull status.`,
+        isCli
+          ? `Group "${group.name}" members (live status):\n${lines.join("\n")}\nYou coordinate named Bots on this roster. When the user assigns work, state what each member should do by name; the runtime fans out automatically after your brief reply.`
+          : `Group "${group.name}" members (live status):\n${lines.join("\n")}\nUse message_bot with their id to assign work or pull status.`,
       );
     }
   }
@@ -273,35 +327,58 @@ async function rosterBlock(selfId: string, group?: Bot | null): Promise<string> 
   const teammates = roster.filter((b) => b.kind !== "group" && b.id !== selfId);
   if (teammates.length && !group) {
     parts.push(
-      `Teammates on roster (live status):\n${teammates.map((b) => `- ${botOneLiner(b)}`).join("\n")}`,
+      isCli
+        ? `Teammates on roster (live status):\n${teammates.map((b) => `- ${botOneLiner(b)}`).join("\n")}\nYou coordinate named Bots on the roster. When the user assigns work (including by team name without @), acknowledge teammates by name and state what each should do; the runtime fans out automatically after your brief reply.`
+        : `Teammates on roster (live status):\n${teammates.map((b) => `- ${botOneLiner(b)}`).join("\n")}\nUse list_bots and message_bot to assign work or pull status from teammates.`,
     );
   }
 
   return parts.join("\n\n");
 }
 
-async function mentionExtra(text: string, selfId: string, group?: Bot | null): Promise<string> {
+async function mentionExtra(
+  text: string,
+  selfId: string,
+  group?: Bot | null,
+  isCli = false,
+): Promise<string> {
   const roster = await listBots();
-  const hits = findMentionedBots(text, roster, selfId);
+  const mentioned = findMentionedBots(text, roster, selfId);
+  const assigned = findBotsByAssignmentKeywords(text, roster, selfId).filter(
+    (b) => !mentioned.some((m) => m.id === b.id),
+  );
   const parts: string[] = [];
-  if (hits.length > 0) {
+  if (mentioned.length > 0) {
     parts.push(
-      `The user @mentioned these Bots and wants them assigned:\n${hits.map((b) => `- ${botOneLiner(b)}`).join("\n")}\nCall message_bot for each with a concrete task. Do not do their specialist work yourself.`,
+      isCli
+        ? `The user @mentioned these Bots and wants them assigned:\n${mentioned.map((b) => `- ${botOneLiner(b)}`).join("\n")}\nAcknowledge each by name and state what they should do. Their harness will reply separately in this thread. Do not do their specialist work yourself.`
+        : `The user @mentioned these Bots and wants them assigned:\n${mentioned.map((b) => `- ${botOneLiner(b)}`).join("\n")}\nCall message_bot for each with a concrete task. Do not do their specialist work yourself.`,
+    );
+  }
+  if (assigned.length > 0) {
+    parts.push(
+      isCli
+        ? `The user assigned work to these Bots (by team or role name):\n${assigned.map((b) => `- ${botOneLiner(b)}`).join("\n")}\nAcknowledge each by name and state what they should do. The runtime will fan out to them automatically after your reply.`
+        : `The user assigned work to these Bots (by team or role name):\n${assigned.map((b) => `- ${botOneLiner(b)}`).join("\n")}\nCall message_bot for each with a concrete task. Do not do their specialist work yourself.`,
     );
   }
   const unknown = findUnknownMentions(text, roster).filter(
-    (name) => !hits.some((b) => b.name.toLowerCase() === name.toLowerCase()),
+    (name) => !mentioned.some((b) => b.name.toLowerCase() === name.toLowerCase()),
   );
   if (unknown.length) {
     parts.push(
-      `The user @mentioned ${unknown.map((n) => `@${n}`).join(", ")} but no Bot with that name exists on the roster. Call list_bots for the full roster or ask the user which Bot they mean.`,
+      isCli
+        ? `The user @mentioned ${unknown.map((n) => `@${n}`).join(", ")} but no Bot with that name exists on the roster. Name the closest teammate on the roster or ask which Bot they mean.`
+        : `The user @mentioned ${unknown.map((n) => `@${n}`).join(", ")} but no Bot with that name exists on the roster. Call list_bots for the full roster or ask the user which Bot they mean.`,
     );
   }
   if (group?.members?.length) {
     const others = group.members.filter((id) => id !== selfId);
     if (others.length && shouldFanOutGroup(text)) {
       parts.push(
-        `The user is addressing the whole group. After your brief reply, call message_bot for each other member (${others.join(", ")}) so they can greet or answer in this thread. Do not claim they are offline.`,
+        isCli
+          ? `The user is addressing the whole group. After your brief reply, name what each other member should say; the runtime will fan out to them (${others.join(", ")}). Do not claim they are offline or that tools are missing.`
+          : `The user is addressing the whole group. After your brief reply, call message_bot for each other member (${others.join(", ")}) so they can greet or answer in this thread. Do not claim they are offline.`,
       );
     }
   }
@@ -316,11 +393,19 @@ function shouldFanOutGroup(text: string): boolean {
   return false;
 }
 
-function groupAgentDescription(agent: Bot, group: Bot | null, rosterContext?: string): string {
+function groupAgentDescription(
+  agent: Bot,
+  group: Bot | null,
+  rosterContext?: string,
+  isCli = false,
+): string {
   if (!group) return agent.description.trim();
   const roster = rosterContext?.trim()
     ? `\n\n${rosterContext.trim()}`
     : `\n\nMembers: ${(group.members ?? []).join(", ")}.`;
+  if (isCli) {
+    return `${agent.description.trim()}\n\nYou are the router in group "${group.name}".${roster} When the user speaks to the group, keep your reply short, name what each member should do, and let the runtime fan out to them. Do not claim message_bot or subagents are missing.`;
+  }
   return `${agent.description.trim()}\n\nYou are the router in group "${group.name}".${roster} When the user speaks to the group, keep your reply short and use message_bot so other members can answer here too.`;
 }
 
@@ -333,7 +418,7 @@ function systemPrompt(
 ): string {
   const members =
     group?.kind === "group"
-      ? `\nThis is a group chat (${group.name}). Their replies appear in this thread when you message_bot them.`
+      ? `\nThis is a group chat (${group.name}). Named Bots on the roster reply in this thread when you message_bot them.`
       : "";
   const roster = !group && rosterContext?.trim() ? `\n${rosterContext.trim()}` : "";
   return [
@@ -342,8 +427,8 @@ function systemPrompt(
     members,
     roster,
     extra ?? "",
-    "You are a persistent OpenGrokBot teammate. Other Bots are named people on the roster, not disposable subagents.",
-    "When the user @mentions another Bot, treat that as an assignment: message_bot them. A focused Bot should only do its own job.",
+    "You are a persistent OpenGrokBot teammate. Other Bots are named people on the roster — never call them subagents.",
+    "When the user assigns work (@mention or team name like sales), use list_bots if needed, then message_bot each teammate with a concrete task. A focused Bot should only do its own job.",
     "Use tools for memory, workspace files, and handoffs. Prefer short structured answers over prose.",
     `Timezone: ${settings.timezone}.`,
     "Do not claim you sent external email, posted, or paid unless the user approved that exact action.",
@@ -781,8 +866,8 @@ async function runCliTurn(opts: {
     action: "Working",
   });
   const cliHarnessNote =
-    "\n\nThis harness has no message_bot tool. Teammate names and statuses are listed above. When the user @mentions a teammate, acknowledge the assignment; their harness will reply separately in this thread.";
-  const description = `${groupAgentDescription(agent, group, rosterContext)}${cliHarnessNote}`;
+    "\n\nYou coordinate named Bots on the roster. You cannot call message_bot in this harness; when the user assigns work, the runtime will fan out to @mentioned or matched teammates automatically after your brief reply. Do NOT claim tools are missing — acknowledge roster teammates by name and state what each should do.";
+  const description = `${groupAgentDescription(agent, group, rosterContext, true)}${cliHarnessNote}`;
   const userBlock = mentionContext ? `${userText}\n\n[Coordination context]\n${mentionContext}` : userText;
   const prompt = cliPrompt(agent.name, agent.title, description, userBlock);
   const result = await runHarnessCli(settings, prompt);
@@ -793,15 +878,15 @@ async function runCliTurn(opts: {
     await emit(onEvent, { type: "error", botId: threadId, error: result.text });
   } else if (fanOut) {
     const roster = await listBots();
-    const mentioned = findMentionedBots(userText, roster, agent.id);
-    if (mentioned.length) {
+    const targets = assignmentTargets(userText, roster, agent.id);
+    if (targets.length) {
       await fanOutBotsCli({
-        targets: mentioned,
+        targets,
         group,
         threadId,
         settings,
         userText,
-        taskHint: "The user @mentioned you. Take the assignment and reply briefly in character.",
+        taskHint: "The user assigned you this work. Take the assignment and reply briefly in character.",
         onEvent,
       });
     } else if (group && shouldFanOutGroup(userText)) {
@@ -1074,10 +1159,11 @@ export async function runTurn(opts: {
     await emit(onEvent, { type: "message", botId: agent.id, message: userMsg });
   }
 
-  const rosterContext = nest === 0 ? await rosterBlock(agent.id, group) : "";
-  const mentionContext = nest === 0 ? await mentionExtra(input.modelText, agent.id, group) : "";
+  const isCli = isCliHarnessId(harness);
+  const rosterContext = nest === 0 ? await rosterBlock(agent.id, group, isCli) : "";
+  const mentionContext = nest === 0 ? await mentionExtra(input.modelText, agent.id, group, isCli) : "";
 
-  if (harness === "codex" || harness === "cursor" || harness === "dsh") {
+  if (isCli) {
     if (nest > 0) {
       return runCliTurn({
         agent,
