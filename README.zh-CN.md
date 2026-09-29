@@ -39,7 +39,7 @@ pnpm start
 
 ## 桌面应用（macOS）
 
-OpenGrokBot 提供未签名的 Electron `.dmg`，方便本机使用。桌面版会自动启动 Fastify 服务，并在窗口里打开 UI。
+OpenGrokBot 提供未签名的 Electron `.dmg`，方便本机使用。桌面版会自动启动 Fastify 服务，并在窗口里打开 UI。关闭窗口会隐藏到菜单栏托盘，点托盘图标或 Dock 可再次显示；要从托盘菜单选 **Quit** 才会真正退出。
 
 **环境要求：** macOS；系统 `PATH` 里要有 Node 20+（打包版会调用本机 `node`）；pnpm。
 
@@ -72,7 +72,7 @@ pnpm dev:desktop
 
 会先跑 TypeScript 开发服务，等 `/api/health` 就绪后再打开 Electron 窗口。
 
-**v0.2 限制：** 系统 `PATH` 里要有 Node 20+（应用会调用本机 `node` 跑服务）。无代码签名、自动更新或菜单栏托盘。CLI 执行器（`codex`、`cursor`、`dsh`）仍需在本机单独安装。用户数据仍在 `~/.opengrokbot/`。
+**v0.2 限制：** 系统 `PATH` 里要有 Node 20+（应用会调用本机 `node` 跑服务）。无代码签名或自动更新；已有菜单栏托盘，关窗不会退出进程，需从托盘菜单退出。CLI 执行器（`codex`、`cursor`、`dsh`）仍需在本机单独安装。用户数据仍在 `~/.opengrokbot/`。
 
 ### 后台通知
 
@@ -104,7 +104,7 @@ pnpm dev:desktop
 
 **这个版本有**
 
-- **macOS 桌面应用** — 未签名的 Electron `.dmg`；自动启动本机服务并在窗口里打开 UI
+- **macOS 桌面应用** — 未签名的 Electron `.dmg`；自动启动本机服务、菜单栏托盘、关窗隐藏到托盘（托盘菜单退出）
 - 带名字的花名册，可以新建 Bot（选颜色、形状、表情）
 - **Harness 切换** — OpenAI 兼容 HTTP、Ollama、Codex CLI、Cursor Agent、DeepSeek Harness；本机 CLI 没装会给出安装命令
 - **头像** — 8 种形状、8 种表情；idle / thinking / working / waiting / blocked / done 六种状态动效长在脸上，不用额外转圈

@@ -1,5 +1,6 @@
-import { app, BrowserWindow } from "electron";
+import { app, BrowserWindow, Menu, Tray, nativeImage } from "electron";
 import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -7,8 +8,11 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 /** @type {BrowserWindow | null} */
 let mainWindow = null;
+/** @type {Tray | null} */
+let tray = null;
 /** @type {import("node:child_process").ChildProcess | null} */
 let serverProcess = null;
+let isQuitting = false;
 
 function serverPort() {
   return process.env.OPENGROKBOT_PORT ?? "3088";
@@ -66,6 +70,63 @@ function stopServer() {
   serverProcess = null;
 }
 
+function loadTrayIcon() {
+  const candidates = [
+    join(__dirname, "..", "build", "icon.png"),
+    join(process.resourcesPath, "icon.png"),
+    join(process.resourcesPath, "icon.icns"),
+  ];
+  for (const path of candidates) {
+    if (!existsSync(path)) continue;
+    let image = nativeImage.createFromPath(path);
+    if (image.isEmpty()) continue;
+    if (process.platform === "darwin") {
+      image = image.resize({ width: 18, height: 18 });
+    } else if (process.platform === "win32") {
+      image = image.resize({ width: 16, height: 16 });
+    }
+    return image;
+  }
+  return nativeImage.createEmpty();
+}
+
+function focusMainWindow() {
+  if (!mainWindow) {
+    createWindow();
+    return;
+  }
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  if (!mainWindow.isVisible()) mainWindow.show();
+  mainWindow.focus();
+}
+
+function createTray() {
+  if (tray) return;
+  const icon = loadTrayIcon();
+  tray = new Tray(icon.isEmpty() ? nativeImage.createEmpty() : icon);
+  tray.setToolTip("OpenGrokBot");
+
+  const contextMenu = Menu.buildFromTemplate([
+    {
+      label: "Show OpenGrokBot",
+      click: () => focusMainWindow(),
+    },
+    { type: "separator" },
+    {
+      label: "Quit",
+      click: () => {
+        isQuitting = true;
+        app.quit();
+      },
+    },
+  ]);
+  tray.setContextMenu(contextMenu);
+
+  tray.on("click", () => {
+    focusMainWindow();
+  });
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1200,
@@ -81,18 +142,22 @@ function createWindow() {
 
   mainWindow.once("ready-to-show", () => mainWindow?.show());
 
+  mainWindow.on("close", (ev) => {
+    if (!isQuitting) {
+      ev.preventDefault();
+      mainWindow?.hide();
+    }
+  });
+
+  mainWindow.on("closed", () => {
+    mainWindow = null;
+  });
+
   mainWindow.webContents.on("page-title-updated", (ev) => {
     ev.preventDefault();
   });
 
   void mainWindow.loadURL(serverUrl());
-}
-
-function focusMainWindow() {
-  if (!mainWindow) return;
-  if (mainWindow.isMinimized()) mainWindow.restore();
-  if (!mainWindow.isVisible()) mainWindow.show();
-  mainWindow.focus();
 }
 
 const gotLock = app.requestSingleInstanceLock();
@@ -119,15 +184,19 @@ if (!gotLock) {
 
     await waitForHealth();
     createWindow();
+    createTray();
   });
 
   app.on("window-all-closed", () => {
-    if (process.platform !== "darwin") app.quit();
+    // Keep running in the menu-bar tray until the user chooses Quit.
   });
 
   app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    focusMainWindow();
   });
 
-  app.on("before-quit", stopServer);
+  app.on("before-quit", () => {
+    isQuitting = true;
+    stopServer();
+  });
 }

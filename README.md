@@ -39,7 +39,7 @@ Defaults bind to `127.0.0.1:3088`. Override with `OPENGROKBOT_HOST`, `OPENGROKBO
 
 ## Desktop app (macOS)
 
-OpenGrokBot ships an unsigned Electron `.dmg` for local use. The desktop app starts the Fastify server for you and opens the UI in a window.
+OpenGrokBot ships an unsigned Electron `.dmg` for local use. The desktop app starts the Fastify server for you and opens the UI in a window. Closing the window hides the app to the menu-bar tray; click the tray icon or use the Dock to show it again, or choose **Quit** from the tray menu to exit fully.
 
 **Prerequisites:** macOS, Node 20+ on `PATH` (the packaged app spawns your system `node`), pnpm.
 
@@ -72,7 +72,7 @@ pnpm dev:desktop
 
 This runs the TypeScript dev server and opens Electron once `/api/health` responds.
 
-**Limitations (v0.2):** requires Node 20+ on `PATH` (the app spawns your system `node` to run the server). No code signing, auto-update, or menu-bar tray. CLI harnesses (`codex`, `cursor`, `dsh`) still need separate install on the machine. User data stays in `~/.opengrokbot/` either way.
+**Limitations (v0.2):** requires Node 20+ on `PATH` (the app spawns your system `node` to run the server). No code signing or auto-update. Menu-bar tray is included: closing the window keeps the server running until you quit from the tray. CLI harnesses (`codex`, `cursor`, `dsh`) still need separate install on the machine. User data stays in `~/.opengrokbot/` either way.
 
 ### Background notifications
 
@@ -104,7 +104,7 @@ This is a working local app, not a README stub.
 
 **In this release**
 
-- **macOS desktop app** — unsigned Electron `.dmg`; spawns the local server and opens the UI in a window
+- **macOS desktop app** — unsigned Electron `.dmg`; spawns the local server, menu-bar tray, close-to-tray (quit from tray menu)
 - Named roster plus Create a Bot (color, shape, expression)
 - **Harness switcher** — OpenAI-compatible HTTP, Ollama, Codex CLI, Cursor Agent, or DeepSeek Harness, with install hints for missing local CLIs
 - **Avatars** — 8 shapes and 8 expressions; lifecycle motion (idle / thinking / working / waiting / blocked / done) on the face, not a separate spinner
