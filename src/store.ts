@@ -86,6 +86,7 @@ export const DEFAULT_SETTINGS: Settings = {
   profileName: "You",
   profileColor: "#E8B86D",
   notifications: "on",
+  openAtLogin: false,
 };
 
 const live = new Map<string, { status: BotStatus; action: string }>();
@@ -131,6 +132,7 @@ export async function loadSettings(): Promise<Settings> {
   if (typeof raw.profileName !== "string" || !raw.profileName.trim()) {
     merged.profileName = defaultProfileName();
   }
+  merged.openAtLogin = raw.openAtLogin === true;
   return merged;
 }
 

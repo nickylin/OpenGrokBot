@@ -1,6 +1,8 @@
-import { app, BrowserWindow, Menu, Tray, nativeImage } from "electron";
+import { app, BrowserWindow, ipcMain, Menu, Tray, nativeImage } from "electron";
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
+import { readFile } from "node:fs/promises";
+import { homedir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -31,6 +33,38 @@ function serverUrl() {
   return `http://${serverHost()}:${serverPort()}`;
 }
 
+function settingsFilePath() {
+  const home = process.env.OPENGROKBOT_HOME ?? join(homedir(), ".opengrokbot");
+  return join(home, "settings.json");
+}
+
+async function readOpenAtLoginFromDisk() {
+  try {
+    const path = settingsFilePath();
+    if (!existsSync(path)) return false;
+    const raw = JSON.parse(await readFile(path, "utf8"));
+    return Boolean(raw.openAtLogin);
+  } catch {
+    return false;
+  }
+}
+
+function applyLoginItem(openAtLogin) {
+  app.setLoginItemSettings({
+    openAtLogin: Boolean(openAtLogin),
+    openAsHidden: true,
+  });
+}
+
+function shouldStartHidden() {
+  if (process.argv.includes("--hidden")) return true;
+  if (process.platform === "darwin") {
+    const { wasOpenedAsHidden } = app.getLoginItemSettings();
+    if (wasOpenedAsHidden) return true;
+  }
+  return false;
+}
+
 async function waitForHealth(timeoutMs = 60_000) {
   const url = `${serverUrl()}/api/health`;
   const started = Date.now();
@@ -55,6 +89,7 @@ function startServer() {
     OPENGROKBOT_ROOT: root,
     OPENGROKBOT_PORT: serverPort(),
     OPENGROKBOT_HOST: serverHost(),
+    OPENGROKBOT_DESKTOP: "1",
   };
 
   return spawn(node, [entry], {
@@ -92,7 +127,7 @@ function loadTrayIcon() {
 
 function focusMainWindow() {
   if (!mainWindow) {
-    createWindow();
+    createWindow(false);
     return;
   }
   if (mainWindow.isMinimized()) mainWindow.restore();
@@ -127,7 +162,7 @@ function createTray() {
   });
 }
 
-function createWindow() {
+function createWindow(startHidden = false) {
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
@@ -137,10 +172,13 @@ function createWindow() {
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
+      preload: join(__dirname, "preload.mjs"),
     },
   });
 
-  mainWindow.once("ready-to-show", () => mainWindow?.show());
+  mainWindow.once("ready-to-show", () => {
+    if (!startHidden) mainWindow?.show();
+  });
 
   mainWindow.on("close", (ev) => {
     if (!isQuitting) {
@@ -164,6 +202,11 @@ const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
   app.quit();
 } else {
+  ipcMain.handle("set-open-at-login", (_event, enabled) => {
+    applyLoginItem(enabled);
+    return { ok: true, openAtLogin: Boolean(enabled) };
+  });
+
   app.on("second-instance", () => {
     focusMainWindow();
   });
@@ -172,6 +215,9 @@ if (!gotLock) {
     if (process.platform === "darwin") {
       app.setAppUserModelId("com.opengrokbot.app");
     }
+
+    const openAtLogin = await readOpenAtLoginFromDisk();
+    applyLoginItem(openAtLogin);
 
     if (app.isPackaged) {
       serverProcess = startServer();
@@ -183,7 +229,8 @@ if (!gotLock) {
     }
 
     await waitForHealth();
-    createWindow();
+    const startHidden = shouldStartHidden();
+    createWindow(startHidden);
     createTray();
   });
 

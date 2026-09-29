@@ -29,6 +29,7 @@ export type Settings = {
   profileName: string;
   profileColor: string;
   notifications: OnOff;
+  openAtLogin: boolean;
 };
 
 export type Routine = {

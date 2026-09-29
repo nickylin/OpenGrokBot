@@ -307,7 +307,18 @@ const defaultCfg = {
   profileName: "You",
   profileColor: "#E8B86D",
   notifications: "on",
+  openAtLogin: false,
 };
+
+function isDesktopApp() {
+  return Boolean(window.opengrokbot?.isDesktop);
+}
+
+function syncOpenAtLogin(enabled) {
+  if (window.opengrokbot?.setOpenAtLogin) {
+    void window.opengrokbot.setOpenAtLogin(Boolean(enabled));
+  }
+}
 
 const PROFILE_COLORS = ["#E8B86D", "#5EC8B5", "#F5A54A", "#4A6FA5", "#8B6CF7", "#3D8BFF", "#E07A3D"];
 
@@ -1634,7 +1645,19 @@ function renderSettings() {
     bindSeg("localExec", "localExec");
   }
   if (setPane === "agent") {
+    const loginAtStartField = isDesktopApp()
+      ? `
+      <div class="field">
+        <label>Start at login / 登录时启动</label>
+        <div class="seg">
+          <button data-seg="openAtLogin" data-val="on">On</button>
+          <button data-seg="openAtLogin" data-val="off">Off</button>
+        </div>
+        <div class="hint">When on, macOS starts OpenGrokBot in the background at login (menu-bar tray). Closing the window does not quit; use tray → Quit to exit fully.</div>
+      </div>`
+      : "";
     body.innerHTML = `
+      ${loginAtStartField}
       <div class="field">
         <label>Background notifications</label>
         <div class="seg">
@@ -1669,6 +1692,16 @@ function renderSettings() {
     bindFields({ "f-tz": "timezone" });
     bindSeg("scheduler", "scheduler");
     bindSeg("notifications", "notifications");
+    document.querySelectorAll('[data-seg="openAtLogin"]').forEach((btn) => {
+      const on = cfg.openAtLogin === true;
+      btn.classList.toggle("on", btn.dataset.val === (on ? "on" : "off"));
+      btn.onclick = () => {
+        cfg.openAtLogin = btn.dataset.val === "on";
+        syncOpenAtLogin(cfg.openAtLogin);
+        saveCfg();
+        renderSettings();
+      };
+    });
     document.querySelectorAll('[data-seg="notifications"]').forEach((btn) => {
       btn.addEventListener("click", () => {
         if (btn.dataset.val === "on") void requestNotificationPermission().then(() => renderNotificationPermHint());

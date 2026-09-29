@@ -34,7 +34,10 @@ export async function startServer(): Promise<void> {
   const app = Fastify({ logger: true });
   await app.register(cors, { origin: true });
 
-  app.get("/api/health", async () => ({ ok: true }));
+  app.get("/api/health", async () => ({
+    ok: true,
+    desktop: process.env.OPENGROKBOT_DESKTOP === "1",
+  }));
 
   app.get("/api/settings", async () => loadSettings());
 
