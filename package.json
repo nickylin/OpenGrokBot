@@ -5,7 +5,7 @@
   "license": "MIT",
   "type": "module",
   "main": "desktop/main.mjs",
-  "description": "Local-first Grok Bot-style roster of persistent agents. Unofficial. Bring any OpenAI-compatible API.",
+  "description": "Open-source Grok Bot alternative (平替). Same teammates, roster, memory, approvals — on your machine.",
   "author": "nickylin",
   "homepage": "https://github.com/nickylin/OpenGrokBot#readme",
   "bugs": {
@@ -53,6 +53,9 @@
     "wait-on": "^9.0.1"
   },
   "pnpm": {
-    "onlyBuiltDependencies": ["esbuild", "electron"]
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "electron"
+    ]
   }
 }
