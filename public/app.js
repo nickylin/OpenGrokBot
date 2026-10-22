@@ -470,7 +470,7 @@ function previewForBot(botId) {
   if (botId === selected && messages.length) {
     for (let i = messages.length - 1; i >= 0; i -= 1) {
       const m = messages[i];
-      if (m.role === "assistant" && m.kind !== "approval") {
+      if (m.role === "assistant" && m.kind !== "approval" && m.kind !== "form") {
         const p = plainPreview(m.content);
         if (p) return p;
       }
@@ -634,6 +634,16 @@ function handleNotificationEvent(event) {
     const m = event.message;
     if (m?.kind === "approval" && !m.decision) {
       notifyBlocked(event.botId, approvalPreview(m.content));
+      return;
+    }
+    if (m?.kind === "form" && (m.formStatus ?? "pending") === "pending") {
+      let title = "A form is waiting for you";
+      try {
+        title = JSON.parse(m.content).title || title;
+      } catch {
+        /* keep default */
+      }
+      notifyBlocked(event.botId, title);
       return;
     }
     if (m?.kind === "routine" && shouldNotifyForBot(event.botId)) {
@@ -956,6 +966,117 @@ function renderIncomingHandoff(m, enter) {
   </div>`;
 }
 
+function parseFormPayload(m) {
+  try {
+    const parsed = JSON.parse(m.content);
+    if (parsed && Array.isArray(parsed.fields)) return parsed;
+  } catch {
+    /* not a form payload */
+  }
+  return null;
+}
+
+function formFieldControl(f) {
+  const name = esc(f.name);
+  const req = f.required ? ' data-required="1"' : "";
+  const max = f.maxLength ? ` maxlength="${Number(f.maxLength)}"` : "";
+  const def = f.default != null ? String(f.default) : "";
+  switch (f.type) {
+    case "textarea":
+      return `<textarea data-field="${name}" data-ftype="textarea"${req}${max} rows="3">${esc(def)}</textarea>`;
+    case "number":
+      return `<input data-field="${name}" data-ftype="number"${req} type="number" value="${esc(def)}" autocomplete="off" />`;
+    case "date":
+      return `<input data-field="${name}" data-ftype="date"${req} type="date" value="${esc(def)}" />`;
+    case "select":
+      return `<select data-field="${name}" data-ftype="select"${req}>
+        <option value="">Choose…</option>
+        ${(f.options || []).map((o) => `<option value="${esc(o.value)}"${def === o.value ? " selected" : ""}>${esc(o.label)}</option>`).join("")}
+      </select>`;
+    case "multiselect":
+      return `<div class="fchecks" data-multi-name="${name}"${req}>${(f.options || [])
+        .map(
+          (o) =>
+            `<label class="fcheck"><input type="checkbox" data-field-multi="${name}" value="${esc(o.value)}" /> <span>${esc(o.label)}</span></label>`,
+        )
+        .join("")}</div>`;
+    case "switch":
+      return `<label class="fswitch"><input type="checkbox" data-field="${name}" data-ftype="switch"${def === "true" ? " checked" : ""} /> <span>Yes</span></label>`;
+    case "secret":
+      return `<span class="fsecret"><input data-field="${name}" data-ftype="secret"${req} type="password" autocomplete="off" placeholder="Stored locally — never shown in chat" /><button type="button" class="btn ghost fshow" data-secret-toggle>Show</button></span>`;
+    case "otp":
+      return `<input data-field="${name}" data-ftype="otp"${req} type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="8" placeholder="One-time code" />`;
+    default:
+      return `<input data-field="${name}" data-ftype="text"${req}${max} type="text" value="${esc(def)}" autocomplete="off" />`;
+  }
+}
+
+function formDisplayValue(f, value) {
+  if (value && typeof value === "object" && !Array.isArray(value) && value.provided) {
+    if (f.type === "secret") return value.last4 ? `Saved · ••••${esc(value.last4)}` : "Saved";
+    return "Provided";
+  }
+  if (Array.isArray(value)) {
+    const labels = value.map((v) => {
+      const opt = (f.options || []).find((o) => o.value === v);
+      return opt ? opt.label : String(v);
+    });
+    return esc(labels.join(", "));
+  }
+  if (f.type === "select") {
+    const opt = (f.options || []).find((o) => o.value === value);
+    return esc(opt ? opt.label : String(value ?? ""));
+  }
+  if (f.type === "switch") return value ? "Yes" : "No";
+  return esc(String(value ?? ""));
+}
+
+function renderFormCard(m, enter) {
+  const payload = parseFormPayload(m);
+  if (!payload) return `<div class="sys${enter}">${esc(m.content)}</div>`;
+  const status = m.formStatus || "pending";
+  const head = `<h3>${esc(payload.title)}</h3>${payload.description ? `<p>${esc(payload.description)}</p>` : ""}`;
+  if (status === "pending") {
+    const fields = payload.fields
+      .map(
+        (f) => `<div class="ff" data-field-wrap="${esc(f.name)}">
+          <label>${esc(f.label)}${f.required ? ' <span class="freq">*</span>' : ""}</label>
+          ${formFieldControl(f)}
+          ${f.help ? `<div class="fhint">${esc(f.help)}</div>` : ""}
+          <div class="ferr" hidden></div>
+        </div>`,
+      )
+      .join("");
+    return `<div class="formcard${enter}" data-id="${esc(m.id)}">
+      ${head}
+      <div class="fbody">${fields}</div>
+      <div class="actions">
+        <button class="btn primary" data-form-act="submit">${esc(payload.submitLabel || "Submit")}</button>
+        <button class="btn ghost" data-form-act="cancel">Cancel</button>
+      </div>
+    </div>`;
+  }
+  const values = payload.values || {};
+  const rows = payload.fields
+    .filter((f) => Object.prototype.hasOwnProperty.call(values, f.name))
+    .map(
+      (f) =>
+        `<div class="frow"><span class="flabel">${esc(f.label)}</span><span class="fvalue">${formDisplayValue(f, values[f.name])}</span></div>`,
+    )
+    .join("");
+  const outcome =
+    status === "submitted"
+      ? "Submitted."
+      : status === "cancelled"
+        ? "Cancelled. Nothing was sent."
+        : "Expired. Ask for a new form.";
+  return `<div class="formcard done${enter}" data-id="${esc(m.id)}">
+    ${head}
+    ${rows ? `<div class="fsummary">${rows}</div>` : ""}
+    <p class="outcome">${esc(outcome)}</p>
+  </div>`;
+}
+
 function renderMessage(m, fresh) {
   const enter = fresh ? " fresh" : "";
   if (m.role === "tool") return "";
@@ -1001,6 +1122,9 @@ function renderMessage(m, fresh) {
       </div>`}
     </div>`;
   }
+  if (kind === "form") {
+    return renderFormCard(m, enter);
+  }
   if (m.role === "user") {
     return `<div class="msg user${enter}"><div class="bubble">${bubbleHtml(m.content)}</div></div>`;
   }
@@ -1043,6 +1167,22 @@ function renderThread(opts = {}) {
       .map((m) => renderMessage(m, Boolean(opts.fresh && m.id === lastId)))
       .join("") + draft + renderTyping();
   $("thread").scrollTop = $("thread").scrollHeight;
+  const todoBar = $("formTodo");
+  if (todoBar) {
+    const pendingForm = messages.find(
+      (m) => m.kind === "form" && (m.formStatus ?? "pending") === "pending",
+    );
+    if (pendingForm) {
+      const payload = parseFormPayload(pendingForm);
+      todoBar.hidden = false;
+      todoBar.dataset.target = pendingForm.id;
+      const label = todoBar.querySelector("span");
+      if (label) label.textContent = `A form is waiting: ${payload ? payload.title : "untitled"}`;
+    } else {
+      todoBar.hidden = true;
+      delete todoBar.dataset.target;
+    }
+  }
 }
 
 function wallpaperPeriod() {
@@ -2270,6 +2410,95 @@ function bindUi() {
       if (id) selectBot(id);
       return;
     }
+    const toggle = e.target.closest("button[data-secret-toggle]");
+    if (toggle) {
+      const input = toggle.closest(".fsecret")?.querySelector("input[data-field]");
+      if (input) {
+        const show = input.type === "password";
+        input.type = show ? "text" : "password";
+        toggle.textContent = show ? "Hide" : "Show";
+        input.focus();
+      }
+      return;
+    }
+    const fbtn = e.target.closest("button[data-form-act]");
+    if (fbtn) {
+      if (!selected) return;
+      const box = fbtn.closest(".formcard");
+      if (!box || box.dataset.busy) return;
+      const act = fbtn.dataset.formAct;
+      let body;
+      if (act === "cancel") {
+        body = { messageId: box.dataset.id };
+      } else {
+        const values = {};
+        let valid = true;
+        const markInvalid = (wrap) => {
+          if (!wrap) return;
+          wrap.classList.add("invalid");
+          const err = wrap.querySelector(".ferr");
+          if (err) {
+            err.textContent = "Required";
+            err.hidden = false;
+          }
+        };
+        box.querySelectorAll("[data-field-wrap]").forEach((wrap) => {
+          wrap.classList.remove("invalid");
+          const err = wrap.querySelector(".ferr");
+          if (err) {
+            err.hidden = true;
+            err.textContent = "";
+          }
+        });
+        box.querySelectorAll("[data-field]").forEach((el) => {
+          const name = el.dataset.field;
+          let v;
+          if (el.dataset.ftype === "switch") v = el.checked;
+          else if (el.dataset.ftype === "number") v = el.value === "" ? "" : Number(el.value);
+          else v = el.value;
+          const isEmpty = v === "" || v == null;
+          if (el.dataset.required && isEmpty) {
+            valid = false;
+            markInvalid(el.closest("[data-field-wrap]"));
+            return;
+          }
+          if (!isEmpty || el.dataset.ftype === "switch") values[name] = v;
+        });
+        box.querySelectorAll("[data-multi-name]").forEach((group) => {
+          const name = group.dataset.multiName;
+          const picked = [...group.querySelectorAll("input:checked")].map((el) => el.value);
+          if (group.dataset.required && picked.length === 0) {
+            valid = false;
+            markInvalid(group.closest("[data-field-wrap]"));
+            return;
+          }
+          if (picked.length) values[name] = picked;
+        });
+        if (!valid) return;
+        body = { messageId: box.dataset.id, values };
+      }
+      box.dataset.busy = "1";
+      sending = true;
+      syncSendBtn();
+      try {
+        const path = act === "cancel" ? "forms/cancel" : "forms";
+        const res = await fetch(`/api/bots/${encodeURIComponent(selected)}/${path}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        if (!res.ok) throw new Error(await res.text());
+        await readSSE(res, applyEvent);
+        await loadMessages();
+        await loadRoster();
+      } catch (err) {
+        toast(err.message);
+      }
+      sending = false;
+      syncSendBtn();
+      delete box.dataset.busy;
+      return;
+    }
     const btn = e.target.closest("button[data-act]");
     if (!btn || !selected) return;
     const box = btn.closest(".approval");
@@ -2303,6 +2532,15 @@ function bindUi() {
       syncSendBtn();
       delete box.dataset.busy;
       toast(err.message);
+    }
+  });
+  $("formTodoBtn")?.addEventListener("click", () => {
+    const id = $("formTodo")?.dataset.target;
+    if (!id) return;
+    const card = document.querySelector(`.formcard[data-id="${CSS.escape(id)}"]`);
+    if (card) {
+      card.scrollIntoView({ behavior: "smooth", block: "center" });
+      card.querySelector("input, textarea, select")?.focus({ preventScroll: true });
     }
   });
   const picker = $("picker");

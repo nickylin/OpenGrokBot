@@ -56,16 +56,62 @@ export type Bot = {
 
 export type ApprovalDecision = "allow" | "always" | "deny";
 
+export type FormFieldType =
+  | "text"
+  | "textarea"
+  | "number"
+  | "date"
+  | "select"
+  | "multiselect"
+  | "switch"
+  | "secret"
+  | "otp";
+
+export type FormFieldOption = {
+  value: string;
+  label: string;
+};
+
+export type FormField = {
+  name: string;
+  label: string;
+  type: FormFieldType;
+  required?: boolean;
+  options?: FormFieldOption[];
+  default?: string;
+  help?: string;
+  maxLength?: number;
+  /** Only for type "secret": key under which the value is stored in the local secrets vault. */
+  secretName?: string;
+};
+
+/** JSON payload stored in ChatMessage.content for kind === "form" messages. */
+export type FormCardPayload = {
+  title: string;
+  description?: string;
+  fields: FormField[];
+  submitLabel?: string;
+  /**
+   * Filled in after submit. Contains ONLY non-secret values; secret and otp
+   * fields appear as { provided: true, last4 } markers — never the raw value.
+   */
+  values?: Record<string, unknown>;
+};
+
+export type FormStatus = "pending" | "submitted" | "cancelled" | "expired";
+
 export type ChatMessage = {
   id: string;
   role: MessageRole;
   content: string;
   createdAt: string;
   toolName?: string;
-  kind?: "text" | "handoff" | "routine" | "approval" | "system";
+  kind?: "text" | "handoff" | "routine" | "approval" | "system" | "form";
   fromBotId?: string;
   routineName?: string;
   decision?: ApprovalDecision;
+  /** Only for kind === "form". */
+  formStatus?: FormStatus;
 };
 
 export type AgentEvent =

@@ -2,17 +2,21 @@ import Fastify from "fastify";
 import cors from "@fastify/cors";
 import fastifyStatic from "@fastify/static";
 import { PUBLIC_DIR } from "./paths.js";
-import { fulfillApproval, runTurn, testConnection } from "./agent.js";
+import { fulfillApproval, fulfillForm, fulfillFormCancel, runTurn, testConnection } from "./agent.js";
 import {
   clearRoster,
   createBot,
+  deleteSecret,
+  expirePendingForms,
   getBot,
   listRoster,
+  listSecretStatuses,
   loadSettings,
   loadTranscript,
   resetRosterToSeed,
   saveSettings,
 } from "./store.js";
+import { SECRET_NAME_RE } from "./forms.js";
 import {
   HarnessSwitchError,
   inferHarness,
@@ -31,8 +35,19 @@ function sseWrite(reply: { raw: { write: (chunk: string) => boolean } }, event: 
 }
 
 export async function startServer(): Promise<void> {
-  const app = Fastify({ logger: true });
+  const app = Fastify({
+    logger: {
+      level: "info",
+      // Secret form values travel through POST /api/bots/:id/forms. Request
+      // bodies are not logged by default, and credentials headers are
+      // redacted here as a second line of defense.
+      redact: ["req.headers.authorization", "req.headers.cookie", "res.headers['set-cookie']"],
+    },
+  });
   await app.register(cors, { origin: true });
+
+  const expiredForms = await expirePendingForms().catch(() => 0);
+  if (expiredForms > 0) app.log.info(`expired ${expiredForms} pending form card(s) from a previous run`);
 
   app.get("/api/health", async () => ({
     ok: true,
@@ -176,6 +191,68 @@ export async function startServer(): Promise<void> {
       return { messages };
     },
   );
+
+  // Form cards: submit resumes the paused turn over SSE (same shape as an
+  // approval "allow"). The request body can contain secret values — it is
+  // never logged, and fulfillForm strips secrets into the vault before
+  // anything is persisted or emitted.
+  app.post<{ Params: { id: string }; Body: { messageId?: string; values?: unknown } }>(
+    "/api/bots/:id/forms",
+    async (req, reply) => {
+      const bot = await getBot(req.params.id);
+      if (!bot) return reply.code(404).send({ error: "unknown bot" });
+      reply.hijack();
+      reply.raw.writeHead(200, {
+        "Content-Type": "text/event-stream; charset=utf-8",
+        "Cache-Control": "no-cache, no-transform",
+        Connection: "keep-alive",
+      });
+      const result = await fulfillForm(bot.id, req.body?.messageId, req.body?.values, (event) =>
+        sseWrite(reply, event),
+      );
+      if (!result.ok) {
+        reply.raw.write(
+          `data: ${JSON.stringify({ type: "error", botId: bot.id, error: result.error, errors: result.errors })}\n\n`,
+        );
+      }
+      reply.raw.end();
+    },
+  );
+
+  app.post<{ Params: { id: string }; Body: { messageId?: string } }>(
+    "/api/bots/:id/forms/cancel",
+    async (req, reply) => {
+      const bot = await getBot(req.params.id);
+      if (!bot) return reply.code(404).send({ error: "unknown bot" });
+      reply.hijack();
+      reply.raw.writeHead(200, {
+        "Content-Type": "text/event-stream; charset=utf-8",
+        "Cache-Control": "no-cache, no-transform",
+        Connection: "keep-alive",
+      });
+      const result = await fulfillFormCancel(bot.id, req.body?.messageId, (event) =>
+        sseWrite(reply, event),
+      );
+      if (!result.ok) {
+        reply.raw.write(
+          `data: ${JSON.stringify({ type: "error", botId: bot.id, error: result.error })}\n\n`,
+        );
+      }
+      reply.raw.end();
+    },
+  );
+
+  // Secrets vault: statuses only (name, last4, updatedAt). There is
+  // deliberately no route that returns a stored value.
+  app.get("/api/secrets", async () => ({ secrets: await listSecretStatuses() }));
+
+  app.delete<{ Params: { name: string } }>("/api/secrets/:name", async (req, reply) => {
+    const name = req.params.name ?? "";
+    if (!SECRET_NAME_RE.test(name)) return reply.code(400).send({ error: "invalid secret name" });
+    const removed = await deleteSecret(name);
+    if (!removed) return reply.code(404).send({ error: "unknown secret" });
+    return { ok: true };
+  });
 
   await app.register(fastifyStatic, { root: PUBLIC_DIR, prefix: "/" });
 

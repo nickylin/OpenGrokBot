@@ -33,12 +33,17 @@ import {
   listBots,
   loadSettings,
   loadTranscript,
+  peekForm,
   readMemory,
   resolveApproval,
+  resolveForm,
+  saveSecret,
   saveSettings,
   setLiveStatus,
   writeMemory,
 } from "./store.js";
+import { validateFormSchema, validateSubmission } from "./forms.js";
+import type { FormCardPayload } from "./types.js";
 
 const execFileAsync = promisify(execFile);
 const MAX_ROUNDS = 12;
@@ -52,12 +57,16 @@ type LoopContext = {
   settings: Settings;
   model: string;
   nest: number;
+  /** Interactive cards (forms) are only offered in top-level, non-routine turns. */
+  interactive: boolean;
 };
 
 type PendingTurn = {
   ctx: LoopContext;
   messages: ChatCompletionMessageParam[];
   pendingToolCallId: string;
+  interaction?: "approval" | "form";
+  formMessageId?: string;
 };
 
 const pendingTurns = new Map<string, PendingTurn>();
@@ -184,6 +193,67 @@ const TOOLS: ChatCompletionTool[] = [
           args: { type: "array", items: { type: "string" } },
         },
         required: ["command"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "request_form",
+      description:
+        "Ask the user to fill a structured form card in chat. Use when you need two or more pieces of structured info at once, or a choice among options. The conversation pauses until the user submits or cancels; the submitted values come back as this tool's result. For API keys, passwords or other secrets, use a field of type \"secret\" (with a secretName) — the value is stored in the local vault and you only ever see a masked reference, never the secret itself. Never ask the user to paste a secret as a plain chat message.",
+      parameters: {
+        type: "object",
+        properties: {
+          title: { type: "string" },
+          description: { type: "string" },
+          submitLabel: { type: "string" },
+          fields: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                name: { type: "string", description: "Machine name: [a-z][a-z0-9_]*" },
+                label: { type: "string" },
+                type: {
+                  type: "string",
+                  enum: [
+                    "text",
+                    "textarea",
+                    "number",
+                    "date",
+                    "select",
+                    "multiselect",
+                    "switch",
+                    "secret",
+                    "otp",
+                  ],
+                },
+                required: { type: "boolean" },
+                options: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    properties: {
+                      value: { type: "string" },
+                      label: { type: "string" },
+                    },
+                    required: ["value", "label"],
+                  },
+                },
+                default: { type: "string" },
+                help: { type: "string" },
+                maxLength: { type: "number" },
+                secretName: {
+                  type: "string",
+                  description: "Only for type \"secret\": vault key, e.g. provider.deepseek.api_key",
+                },
+              },
+              required: ["name", "label", "type"],
+            },
+          },
+        },
+        required: ["title", "fields"],
       },
     },
   },
@@ -430,6 +500,8 @@ function systemPrompt(
     "You are a persistent OpenGrokBot teammate. Other Bots are named people on the roster — never call them subagents.",
     "When the user assigns work (@mention or team name like sales), use list_bots if needed, then message_bot each teammate with a concrete task. A focused Bot should only do its own job.",
     "Use tools for memory, workspace files, and handoffs. Prefer short structured answers over prose.",
+    "When you need two or more pieces of structured information from the user, call request_form once instead of asking question by question in prose.",
+    "Never ask the user to paste an API key, password, or code as a chat message. Use request_form with a field of type \"secret\" instead; you will receive only a masked reference (provided/ref/last4), and the value stays in the local vault.",
     `Timezone: ${settings.timezone}.`,
     "Do not claim you sent external email, posted, or paid unless the user approved that exact action.",
     "If a connector is missing, say so and stop. Never invent credentials.",
@@ -620,6 +692,117 @@ export async function fulfillApproval(
   return [resolved.message, shellMsg];
 }
 
+export type FormFulfillResult =
+  | { ok: true; messages: ChatMessage[] }
+  | { ok: false; error: string; errors?: Record<string, string> };
+
+async function resumePendingForm(
+  botId: string,
+  pending: PendingTurn,
+  toolContent: string,
+  emitEvent: (e: AgentEvent) => void,
+): Promise<void> {
+  pendingTurns.delete(botId);
+  pending.messages.push({
+    role: "tool",
+    tool_call_id: pending.pendingToolCallId,
+    content: toolContent,
+  });
+  setLiveStatus(pending.ctx.agent.id, "working", "Working");
+  await emit(emitEvent, { type: "status", botId, status: "working", action: "Working" });
+  await runAgentLoop(pending.ctx, pending.messages, emitEvent);
+  setLiveStatus(pending.ctx.agent.id, "idle", "Idle");
+  await emit(emitEvent, { type: "status", botId, status: "idle", action: "Idle" });
+  await emit(emitEvent, { type: "done", botId });
+}
+
+function takePendingForm(botId: string, messageId: string): PendingTurn | undefined {
+  const pending = pendingTurns.get(botId);
+  if (pending?.interaction !== "form") return undefined;
+  if (pending.formMessageId !== messageId) {
+    // A different form was left hanging; its card stays pending in the
+    // transcript but its live context is gone, so drop the stale snapshot.
+    pendingTurns.delete(botId);
+    return undefined;
+  }
+  return pending;
+}
+
+export async function fulfillForm(
+  botId: string,
+  messageId: string | undefined,
+  rawValues: unknown,
+  onEvent?: (e: AgentEvent) => void,
+): Promise<FormFulfillResult> {
+  const emitEvent = onEvent ?? (() => undefined);
+  const found = await peekForm(botId, messageId);
+  if (!found) return { ok: false, error: "form not found" };
+  if ((found.message.formStatus ?? "pending") !== "pending") {
+    return { ok: true, messages: [found.message] };
+  }
+
+  const checked = validateSubmission(found.payload, rawValues);
+  if (!checked.ok) return { ok: false, error: "validation failed", errors: checked.errors };
+
+  // Secrets leave the submission here and go straight into the vault. From
+  // this line on, only sanitized values exist: displayValues for the
+  // transcript, toolValues for the model. Raw secret values are never
+  // persisted to the transcript, emitted, or handed to the model.
+  for (const secret of checked.secrets) {
+    await saveSecret(secret.name, secret.value, found.message.fromBotId);
+  }
+
+  const resolved = await resolveForm(botId, found.message.id, "submitted", checked.displayValues);
+  if (!resolved) return { ok: false, error: "form not found" };
+  const cardMessage = resolved.message;
+
+  const pending = takePendingForm(botId, cardMessage.id);
+  if (pending) {
+    await resumePendingForm(
+      botId,
+      pending,
+      JSON.stringify({ submitted: true, values: checked.toolValues }),
+      emitEvent,
+    );
+    return { ok: true, messages: [cardMessage] };
+  }
+
+  // No live turn is waiting (server restarted while the card was open):
+  // submit-as-new-turn fallback carrying only the sanitized values.
+  await runTurn({
+    botId,
+    userText: `[Form submitted: ${found.payload.title}] ${JSON.stringify(checked.toolValues)}`,
+    onEvent: emitEvent,
+  });
+  return { ok: true, messages: [cardMessage] };
+}
+
+export async function fulfillFormCancel(
+  botId: string,
+  messageId: string | undefined,
+  onEvent?: (e: AgentEvent) => void,
+): Promise<FormFulfillResult> {
+  const emitEvent = onEvent ?? (() => undefined);
+  const found = await peekForm(botId, messageId);
+  if (!found) return { ok: false, error: "form not found" };
+  if ((found.message.formStatus ?? "pending") !== "pending") {
+    return { ok: true, messages: [found.message] };
+  }
+  const resolved = await resolveForm(botId, found.message.id, "cancelled");
+  if (!resolved) return { ok: false, error: "form not found" };
+  const cardMessage = resolved.message;
+
+  const pending = takePendingForm(botId, cardMessage.id);
+  if (pending) {
+    await resumePendingForm(botId, pending, JSON.stringify({ cancelled: true }), emitEvent);
+  } else {
+    setLiveStatus(botId, "idle", "Idle");
+    await emit(emitEvent, { type: "status", botId, status: "idle", action: "Idle" });
+    await emit(emitEvent, { type: "done", botId });
+  }
+  return { ok: true, messages: [cardMessage] };
+}
+
 async function runShell(
   settings: Settings,
   command: string,
@@ -650,6 +833,7 @@ async function execTool(
   nest: number,
   onEvent: (e: AgentEvent) => void,
   groupThreadId?: string,
+  interactive?: boolean,
 ): Promise<string> {
   let args: Record<string, unknown> = {};
   try {
@@ -737,6 +921,18 @@ async function execTool(
     }
     case "run_shell":
       return runShell(settings, String(args.command ?? ""), Array.isArray(args.args) ? args.args.map(String) : []);
+    case "request_form": {
+      if (!interactive) {
+        return JSON.stringify({
+          error:
+            "request_form is unavailable in routine runs and teammate handoffs. Ask in plain text, or let the top-level Bot ask.",
+        });
+      }
+      const schema = validateFormSchema(args);
+      if (!schema.ok) return JSON.stringify({ error: schema.error });
+      // processToolCalls intercepts this payload, persists the card and pauses the turn.
+      return JSON.stringify({ needsForm: true, form: schema.payload });
+    }
     default:
       return JSON.stringify({ error: `unknown tool ${name}` });
   }
@@ -909,7 +1105,7 @@ async function processToolCalls(
   for (const call of toolCalls) {
     if (call.type !== "function") continue;
     const input = call.function.arguments ?? "{}";
-    const output = await execTool(agent, settings, call.function.name, input, nest, onEvent, groupThreadId);
+    const output = await execTool(agent, settings, call.function.name, input, nest, onEvent, groupThreadId, ctx.interactive);
     await emit(onEvent, {
       type: "tool",
       botId: threadId,
@@ -963,6 +1159,52 @@ async function processToolCalls(
         }
       } catch {
         /* not an approval payload */
+      }
+    }
+    if (call.function.name === "request_form") {
+      try {
+        const parsed = JSON.parse(output) as { needsForm?: boolean; form?: FormCardPayload };
+        if (parsed.needsForm && parsed.form) {
+          if (pendingTurns.has(threadId)) {
+            messages.push({
+              role: "tool",
+              tool_call_id: call.id,
+              content: JSON.stringify({
+                error:
+                  "another interactive card is already pending in this thread; wait for the user to finish it",
+              }),
+            });
+            continue;
+          }
+          const pending: PendingTurn = {
+            ctx,
+            messages: structuredClone(messages),
+            pendingToolCallId: call.id,
+            interaction: "form",
+          };
+          pendingTurns.set(threadId, pending);
+          const card = await appendMessage(threadId, {
+            id: randomUUID(),
+            role: "assistant",
+            content: JSON.stringify(parsed.form),
+            createdAt: new Date().toISOString(),
+            kind: "form",
+            formStatus: "pending",
+            fromBotId: agent.id,
+          });
+          pending.formMessageId = card.id;
+          await emit(onEvent, { type: "message", botId: threadId, message: card });
+          setLiveStatus(agent.id, "blocked", "Blocked");
+          await emit(onEvent, {
+            type: "status",
+            botId: threadId,
+            status: "blocked",
+            action: "Blocked",
+          });
+          return "approval";
+        }
+      } catch {
+        /* not a form payload */
       }
     }
     messages.push({
@@ -1223,6 +1465,7 @@ export async function runTurn(opts: {
     settings,
     model,
     nest,
+    interactive: nest === 0 && input.kind !== "routine",
   };
   const finalText = await runAgentLoop(ctx, messages, onEvent);
 

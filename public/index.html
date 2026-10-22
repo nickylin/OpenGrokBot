@@ -596,6 +596,46 @@
     .approval.done .actions { display: none; }
     .approval .outcome { font-size: 12px; color: var(--muted); margin: 0; }
 
+    .formcard {
+      border: 1px solid rgba(255,159,10,.35);
+      background: var(--approval-bg);
+      border-radius: 14px;
+      padding: 12px;
+      max-width: 420px;
+    }
+    .formcard h3 { font-size: 13px; margin-bottom: 6px; }
+    .formcard p { font-size: 12px; color: var(--text-2); line-height: 1.45; margin-bottom: 10px; }
+    .formcard.done { opacity: 0.78; border-color: var(--line); background: var(--elevated); }
+    .formcard.done .actions { display: none; }
+    .formcard .outcome { font-size: 12px; color: var(--muted); margin: 8px 0 0; }
+    .formcard .ff { margin-bottom: 10px; }
+    .formcard .ff > label { display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px; }
+    .formcard .freq { color: var(--danger-fg); }
+    .formcard .fhint { font-size: 11px; color: var(--muted); margin-top: 3px; }
+    .formcard .ferr { font-size: 11px; color: var(--danger-fg); margin-top: 3px; }
+    .formcard .ff.invalid input, .formcard .ff.invalid textarea, .formcard .ff.invalid select { border-color: var(--danger-fg); }
+    .formcard input[type="text"], .formcard input[type="password"], .formcard input[type="number"],
+    .formcard input[type="date"], .formcard textarea, .formcard select {
+      width: 100%; box-sizing: border-box; padding: 7px 9px; font-size: 13px;
+      border: 1px solid var(--line); border-radius: 9px;
+      background: var(--elevated); color: var(--text);
+    }
+    .formcard .fsecret { display: flex; gap: 6px; align-items: stretch; }
+    .formcard .fsecret input { flex: 1; }
+    .formcard .fchecks { display: flex; flex-direction: column; gap: 5px; }
+    .formcard .fcheck, .formcard .fswitch { display: flex; gap: 7px; align-items: center; font-size: 13px; font-weight: 400; }
+    .formcard .fsummary { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
+    .formcard .frow { display: flex; gap: 8px; font-size: 12px; }
+    .formcard .flabel { color: var(--muted); min-width: 90px; }
+    .formcard .fvalue { color: var(--text); word-break: break-word; }
+
+    .form-todo {
+      display: flex; align-items: center; justify-content: space-between; gap: 10px;
+      margin: 0 12px 8px; padding: 8px 12px; font-size: 12px;
+      border: 1px solid rgba(255,159,10,.35); border-radius: 10px; background: var(--approval-bg);
+    }
+    .form-todo[hidden] { display: none; }
+
     .handoff { font-size: 12px; color: var(--muted); align-self: center; }
     .handoff em { font-style: normal; color: var(--text-2); }
     .handoff-card {
@@ -1375,6 +1415,10 @@
             </div>
             <div class="thread" id="thread"></div>
             <div class="composer">
+              <div class="form-todo" id="formTodo" hidden>
+                <span></span>
+                <button type="button" class="btn ghost" id="formTodoBtn">Fill it in</button>
+              </div>
               <form class="box" id="composerForm" action="#" autocomplete="off">
                 <div class="picker" id="picker"></div>
                 <div class="exec-wrap" id="execWrap">
