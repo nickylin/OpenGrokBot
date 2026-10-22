@@ -114,6 +114,8 @@ This is a working local app, not a README stub.
 - **Markdown in bubbles** — tables, horizontal rules, headings, lists, bold, inline code, fenced blocks, links
 - Per-Bot markdown memory and a shared workspace on disk
 - Shell commands behind Allow once / Always allow / Deny; **Allow resumes the agent loop** with command output
+- **Interactive form cards** — a Bot can call `request_form` to ask for structured input (text, number, date, select, multi-select, switch) in one card instead of question-by-question chat; submitting resumes the paused turn with clean typed values
+- **Secret fields that never reach the model** — a form field of type `secret` is stored straight into `~/.opengrokbot/secrets.json` (mode 0600); the transcript and the model only ever see a masked reference (`provided` / `ref` / `last4`). `GET /api/secrets` lists masked statuses, `DELETE /api/secrets/:name` removes one — no route returns a value
 - **`/routine` picker** — type `/` in the composer to fire a Bot's routine prompt
 - **Scheduled routines** — in-process scheduler fires enabled routines while the app is open (Settings → Agent → Host scheduler)
 - **Background notifications** — browser or macOS alerts when a reply finishes, approval is needed, or a routine starts
@@ -209,6 +211,7 @@ If you need 24/7, keep a small machine awake — or stay on official Grok Bot.
 | Path | What |
 |---|---|
 | `~/.opengrokbot/settings.json` | API key, models, paths |
+| `~/.opengrokbot/secrets.json` | Secrets collected via form cards (mode 0600, write-only from the API) |
 | `~/.opengrokbot/bots/` | Roster YAML (seeded from `data/bots/` on first run) |
 | `~/.opengrokbot/transcripts/` | Chat history |
 | `~/.opengrokbot/memory/` | Per-Bot `MEMORY.md` |

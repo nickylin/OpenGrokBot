@@ -1,4 +1,4 @@
-import { mkdir, readdir, readFile, writeFile, copyFile, unlink, rm } from "node:fs/promises";
+import { chmod, mkdir, readdir, readFile, writeFile, copyFile, unlink, rm } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { userInfo } from "node:os";
 import { join } from "node:path";
@@ -10,6 +10,8 @@ import {
   type BotKind,
   type BotStatus,
   type ChatMessage,
+  type FormCardPayload,
+  type FormStatus,
   type Settings,
 } from "./types.js";
 import { ensureHome, expandHome, homeDir, SEED_BOTS_DIR } from "./paths.js";
@@ -393,6 +395,179 @@ export async function resolveApproval(
   return { message: messages[idx], fresh: true };
 }
 
+export function parseFormPayload(message: ChatMessage): FormCardPayload | undefined {
+  if (message.kind !== "form") return undefined;
+  try {
+    const parsed = JSON.parse(message.content) as FormCardPayload;
+    if (!parsed || !Array.isArray(parsed.fields)) return undefined;
+    return parsed;
+  } catch {
+    return undefined;
+  }
+}
+
+function findFormIndex(messages: ChatMessage[], messageId?: string): number {
+  if (messageId) {
+    const idx = messages.findIndex((m) => m.id === messageId && m.kind === "form");
+    if (idx >= 0) return idx;
+  }
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i].kind === "form" && (messages[i].formStatus ?? "pending") === "pending") return i;
+  }
+  return -1;
+}
+
+/** Read a form card and its payload without changing anything. */
+export async function peekForm(
+  botId: string,
+  messageId?: string,
+): Promise<{ message: ChatMessage; payload: FormCardPayload } | undefined> {
+  const messages = await loadTranscript(botId);
+  const idx = findFormIndex(messages, messageId);
+  if (idx < 0) return undefined;
+  const payload = parseFormPayload(messages[idx]);
+  if (!payload) return undefined;
+  return { message: messages[idx], payload };
+}
+
+/**
+ * Mark a form card resolved. displayValues must already be sanitized by the
+ * caller (see forms.ts: secret values are masked markers, never raw).
+ */
+export async function resolveForm(
+  botId: string,
+  messageId: string | undefined,
+  status: Exclude<FormStatus, "pending">,
+  displayValues?: Record<string, unknown>,
+): Promise<{ message: ChatMessage; fresh: boolean } | undefined> {
+  const messages = await loadTranscript(botId);
+  const idx = findFormIndex(messages, messageId);
+  if (idx < 0) return undefined;
+  const current = messages[idx];
+  if ((current.formStatus ?? "pending") !== "pending") {
+    return { message: current, fresh: false };
+  }
+  const payload = parseFormPayload(current);
+  if (payload && displayValues) payload.values = displayValues;
+  messages[idx] = {
+    ...current,
+    formStatus: status,
+    content: payload ? JSON.stringify(payload) : current.content,
+  };
+  await saveTranscript(botId, messages);
+  return { message: messages[idx], fresh: true };
+}
+
+/**
+ * Suspended form context lives only in server memory (same as approvals), so
+ * after a restart every still-pending card is orphaned. Mark them expired at
+ * startup; the Bot can simply ask again.
+ */
+export async function expirePendingForms(): Promise<number> {
+  const dir = join(homeDir(), "transcripts");
+  if (!existsSync(dir)) return 0;
+  let expired = 0;
+  for (const name of await readdir(dir)) {
+    if (!name.endsWith(".json")) continue;
+    const botId = name.slice(0, -".json".length);
+    let messages: ChatMessage[];
+    try {
+      messages = await loadTranscript(botId);
+    } catch {
+      continue;
+    }
+    let changed = false;
+    messages = messages.map((m) => {
+      if (m.kind === "form" && (m.formStatus ?? "pending") === "pending") {
+        expired += 1;
+        changed = true;
+        return { ...m, formStatus: "expired" as FormStatus };
+      }
+      return m;
+    });
+    if (changed) await saveTranscript(botId, messages);
+  }
+  return expired;
+}
+
+// ---------------------------------------------------------------------------
+// Secrets vault: ~/.opengrokbot/secrets.json (mode 0600)
+// Values are write-only from the API's perspective: callers can store, delete
+// and check status (masked), but no function here is exposed over HTTP that
+// returns a raw value. getSecretValue is for server-side use only (e.g. the
+// phase-2 ${secret:name} placeholder substitution) and must never be wired to
+// a route or a tool result.
+// ---------------------------------------------------------------------------
+
+type SecretRecord = {
+  value: string;
+  updatedAt: string;
+  sourceBotId?: string;
+};
+
+export type SecretStatus = {
+  name: string;
+  provided: true;
+  last4: string;
+  updatedAt: string;
+};
+
+function secretsPath(): string {
+  return join(homeDir(), "secrets.json");
+}
+
+async function loadSecrets(): Promise<Record<string, SecretRecord>> {
+  await ensureHome();
+  if (!existsSync(secretsPath())) return {};
+  try {
+    const raw = JSON.parse(await readFile(secretsPath(), "utf8")) as Record<string, SecretRecord>;
+    return raw && typeof raw === "object" ? raw : {};
+  } catch {
+    return {};
+  }
+}
+
+async function writeSecrets(all: Record<string, SecretRecord>): Promise<void> {
+  await writeFile(secretsPath(), JSON.stringify(all, null, 2), { mode: 0o600 });
+  await chmod(secretsPath(), 0o600).catch(() => undefined);
+}
+
+export async function saveSecret(name: string, value: string, sourceBotId?: string): Promise<void> {
+  const all = await loadSecrets();
+  all[name] = { value, updatedAt: new Date().toISOString(), sourceBotId };
+  await writeSecrets(all);
+}
+
+export async function getSecretValue(name: string): Promise<string | undefined> {
+  const all = await loadSecrets();
+  return all[name]?.value;
+}
+
+function toSecretStatus(name: string, rec: SecretRecord): SecretStatus {
+  return { name, provided: true, last4: rec.value.slice(-4), updatedAt: rec.updatedAt };
+}
+
+export async function getSecretStatus(name: string): Promise<SecretStatus | undefined> {
+  const all = await loadSecrets();
+  const rec = all[name];
+  return rec ? toSecretStatus(name, rec) : undefined;
+}
+
+export async function listSecretStatuses(): Promise<SecretStatus[]> {
+  const all = await loadSecrets();
+  return Object.entries(all)
+    .map(([name, rec]) => toSecretStatus(name, rec))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export async function deleteSecret(name: string): Promise<boolean> {
+  const all = await loadSecrets();
+  if (!(name in all)) return false;
+  delete all[name];
+  await writeSecrets(all);
+  return true;
+}
+
 function relativeTime(iso?: string): string {
   if (!iso) return "";
   const then = new Date(iso).getTime();
@@ -408,6 +583,11 @@ function previewOf(messages: ChatMessage[]): string {
   for (let i = messages.length - 1; i >= 0; i--) {
     const m = messages[i];
     if (m.role === "system" || m.role === "tool") continue;
+    if (m.kind === "form") {
+      const payload = parseFormPayload(m);
+      return payload ? `Form · ${payload.title}`.slice(0, 72) : "Form";
+    }
+    if (m.kind === "approval") continue;
     const text = m.content.replace(/\s+/g, " ").trim();
     if (!text) continue;
     return text.slice(0, 72);
