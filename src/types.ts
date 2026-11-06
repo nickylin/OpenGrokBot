@@ -38,6 +38,42 @@ export type Routine = {
   schedule: string;
   prompt: string;
   enabled: boolean;
+  /** Shared secret for the webhook trigger (POST /api/hooks/routines/...). Local-only, like the API key in settings. */
+  webhookToken?: string;
+};
+
+export type RoutineRunTrigger = "schedule" | "webhook" | "manual";
+
+export type RoutineRun = {
+  id: string;
+  botId: string;
+  routineId: string;
+  routineName: string;
+  trigger: RoutineRunTrigger;
+  startedAt: string;
+  finishedAt?: string;
+  status: "running" | "ok" | "error";
+  detail?: string;
+};
+
+/** One MCP server entry in ~/.opengrokbot/mcp.json. stdio transport only in v0.4. */
+export type McpServerConfig = {
+  name: string;
+  command: string;
+  args?: string[];
+  /** Env for the server process. Values may contain ${secret:name} placeholders, substituted at spawn time. */
+  env?: Record<string, string>;
+  enabled?: boolean;
+};
+
+export type McpServerStatus = {
+  name: string;
+  command: string;
+  enabled: boolean;
+  state: "stopped" | "starting" | "ready" | "error";
+  toolCount: number;
+  tools: string[];
+  error?: string;
 };
 
 export type Bot = {

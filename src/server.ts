@@ -10,12 +10,17 @@ import {
   expirePendingForms,
   getBot,
   listRoster,
+  listRoutineRuns,
   listSecretStatuses,
   loadSettings,
   loadTranscript,
   resetRosterToSeed,
+  saveBot,
   saveSettings,
 } from "./store.js";
+import { loadMcpConfig, mcpManager } from "./mcp.js";
+import { randomBytes } from "node:crypto";
+import type { McpServerConfig } from "./types.js";
 import { SECRET_NAME_RE } from "./forms.js";
 import {
   HarnessSwitchError,
@@ -41,7 +46,12 @@ export async function startServer(): Promise<void> {
       // Secret form values travel through POST /api/bots/:id/forms. Request
       // bodies are not logged by default, and credentials headers are
       // redacted here as a second line of defense.
-      redact: ["req.headers.authorization", "req.headers.cookie", "res.headers['set-cookie']"],
+      redact: [
+        "req.headers.authorization",
+        "req.headers.cookie",
+        "req.headers['x-webhook-token']",
+        "res.headers['set-cookie']",
+      ],
     },
   });
   await app.register(cors, { origin: true });
@@ -252,6 +262,115 @@ export async function startServer(): Promise<void> {
     const removed = await deleteSecret(name);
     if (!removed) return reply.code(404).send({ error: "unknown secret" });
     return { ok: true };
+  });
+
+  // MCP connectors: config lives in ~/.opengrokbot/mcp.json; servers spawn
+  // lazily and their tools appear in Bot turns as mcp_<server>_<tool>.
+  app.get("/api/mcp", async () => ({
+    servers: await mcpManager.statuses(),
+    configs: await loadMcpConfig(),
+  }));
+
+  app.post<{ Body: Partial<McpServerConfig> }>("/api/mcp/servers", async (req, reply) => {
+    const name = String(req.body?.name ?? "").trim();
+    const command = String(req.body?.command ?? "").trim();
+    if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,39}$/.test(name)) {
+      return reply.code(400).send({ error: "server name must be [a-zA-Z0-9_-], max 40 chars" });
+    }
+    if (!command) return reply.code(400).send({ error: "command is required" });
+    const config: McpServerConfig = {
+      name,
+      command,
+      args: Array.isArray(req.body?.args) ? req.body.args.map(String) : [],
+      env:
+        req.body?.env && typeof req.body.env === "object"
+          ? Object.fromEntries(
+              Object.entries(req.body.env as Record<string, unknown>).map(([k, v]) => [k, String(v)]),
+            )
+          : {},
+      enabled: req.body?.enabled !== false,
+    };
+    await mcpManager.upsertServer(config);
+    return { ok: true, servers: await mcpManager.statuses(), configs: await loadMcpConfig() };
+  });
+
+  app.delete<{ Params: { name: string } }>("/api/mcp/servers/:name", async (req, reply) => {
+    const removed = await mcpManager.deleteServer(req.params.name);
+    if (!removed) return reply.code(404).send({ error: "unknown server" });
+    return { ok: true, servers: await mcpManager.statuses(), configs: await loadMcpConfig() };
+  });
+
+  app.post<{ Params: { name: string } }>("/api/mcp/servers/:name/restart", async (req, reply) => {
+    const ok = await mcpManager.restartServer(req.params.name);
+    if (!ok) return reply.code(404).send({ error: "unknown server" });
+    return { ok: true, servers: await mcpManager.statuses() };
+  });
+
+  // Routine run history (newest first; last 20 per routine are kept).
+  app.get<{ Querystring: { botId?: string } }>("/api/routine-runs", async (req) => ({
+    runs: await listRoutineRuns(req.query.botId),
+  }));
+
+  // Generate or rotate a routine's webhook token. The token is stored on the
+  // routine itself (roster YAML on this machine) and returned here so the UI
+  // can show the full trigger URL — same local trust as the settings API key.
+  app.post<{ Params: { id: string; routineId: string } }>(
+    "/api/bots/:id/routines/:routineId/webhook-token",
+    async (req, reply) => {
+      const bot = await getBot(req.params.id);
+      if (!bot) return reply.code(404).send({ error: "unknown bot" });
+      const routine = bot.routines.find((r) => r.id === req.params.routineId);
+      if (!routine) return reply.code(404).send({ error: "unknown routine" });
+      routine.webhookToken = randomBytes(24).toString("hex");
+      await saveBot(bot);
+      return {
+        ok: true,
+        token: routine.webhookToken,
+        path: `/api/hooks/routines/${bot.id}/${routine.id}`,
+      };
+    },
+  );
+
+  app.delete<{ Params: { id: string; routineId: string } }>(
+    "/api/bots/:id/routines/:routineId/webhook-token",
+    async (req, reply) => {
+      const bot = await getBot(req.params.id);
+      if (!bot) return reply.code(404).send({ error: "unknown bot" });
+      const routine = bot.routines.find((r) => r.id === req.params.routineId);
+      if (!routine) return reply.code(404).send({ error: "unknown routine" });
+      routine.webhookToken = undefined;
+      await saveBot(bot);
+      return { ok: true };
+    },
+  );
+
+  // Webhook trigger: POST with header `x-webhook-token: <token>` (or ?t=).
+  // Accepts { "text": "..." } which is appended to the routine prompt.
+  // Responds 202 immediately; the run lands in the run history.
+  app.post<{
+    Params: { botId: string; routineId: string };
+    Querystring: { t?: string };
+    Body: { text?: string };
+  }>("/api/hooks/routines/:botId/:routineId", async (req, reply) => {
+    const bot = await getBot(req.params.botId);
+    if (!bot) return reply.code(404).send({ error: "unknown bot" });
+    const routine = bot.routines.find((r) => r.id === req.params.routineId);
+    if (!routine) return reply.code(404).send({ error: "unknown routine" });
+    if (!routine.webhookToken) {
+      return reply.code(401).send({ error: "webhook is not enabled for this routine" });
+    }
+    const provided = String(req.headers["x-webhook-token"] ?? req.query.t ?? "");
+    if (provided !== routine.webhookToken) {
+      return reply.code(401).send({ error: "bad webhook token" });
+    }
+    if (!routine.enabled) return reply.code(409).send({ error: "routine is disabled" });
+    const tail = typeof req.body?.text === "string" ? req.body.text.slice(0, 2000).trim() : "";
+    void runTurn({
+      botId: bot.id,
+      userText: `/${routine.name}${tail ? ` ${tail}` : ""}`,
+      trigger: "webhook",
+    }).catch(() => undefined);
+    return reply.code(202).send({ ok: true, accepted: true, routine: routine.name });
   });
 
   await app.register(fastifyStatic, { root: PUBLIC_DIR, prefix: "/" });

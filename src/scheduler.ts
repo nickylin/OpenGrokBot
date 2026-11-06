@@ -82,6 +82,7 @@ async function tick(): Promise<void> {
       await runTurn({
         botId: bot.id,
         userText: `/${routine.name}`,
+        trigger: "schedule",
       }).catch(() => undefined);
     }
   }

@@ -44,6 +44,10 @@ import {
 } from "./store.js";
 import { validateFormSchema, validateSubmission } from "./forms.js";
 import type { FormCardPayload } from "./types.js";
+import { mcpManager } from "./mcp.js";
+import { maskSecrets, substituteSecrets } from "./secrets.js";
+import { finishRoutineRun, recordRoutineRunStart } from "./store.js";
+import type { RoutineRunTrigger } from "./types.js";
 
 const execFileAsync = promisify(execFile);
 const MAX_ROUNDS = 12;
@@ -59,6 +63,8 @@ type LoopContext = {
   nest: number;
   /** Interactive cards (forms) are only offered in top-level, non-routine turns. */
   interactive: boolean;
+  /** Built-in tools plus any MCP tools available this turn. */
+  tools: ChatCompletionTool[];
 };
 
 type PendingTurn = {
@@ -502,6 +508,8 @@ function systemPrompt(
     "Use tools for memory, workspace files, and handoffs. Prefer short structured answers over prose.",
     "When you need two or more pieces of structured information from the user, call request_form once instead of asking question by question in prose.",
     "Never ask the user to paste an API key, password, or code as a chat message. Use request_form with a field of type \"secret\" instead; you will receive only a masked reference (provided/ref/last4), and the value stays in the local vault.",
+    "In run_shell command/args you may reference a vault secret as ${secret:name}. The value is substituted on this machine at execution time and masked out of any output you receive — use the placeholder, never ask for the value itself.",
+    "Tools named mcp_<server>_<tool> come from MCP servers configured on this machine (Settings → Connectors). Use them like built-in tools; if one errors that the server is not ready, say the connector is unavailable and stop.",
     `Timezone: ${settings.timezone}.`,
     "Do not claim you sent external email, posted, or paid unless the user approved that exact action.",
     "If a connector is missing, say so and stop. Never invent credentials.",
@@ -582,6 +590,25 @@ function localExecLabel(mode: LocalExec): string {
 
 async function executeShell(command: string, args: string[], workspace: string): Promise<string> {
   const cwd = expandHome(workspace);
+  // ${secret:name} placeholders are substituted here, at the last moment
+  // before exec, on this machine only. Approval cards and transcripts keep
+  // the placeholder form; the value itself never leaves this function
+  // except into the child process. Output is NOT masked here — callers run
+  // maskSecrets() over every tool result before the model sees it.
+  const subCommand = await substituteSecrets(command);
+  if (!subCommand.ok) {
+    return JSON.stringify({ error: `missing secret(s) in vault: ${subCommand.missing.join(", ")}` });
+  }
+  const subArgs: string[] = [];
+  for (const arg of args) {
+    const sub = await substituteSecrets(arg);
+    if (!sub.ok) {
+      return JSON.stringify({ error: `missing secret(s) in vault: ${sub.missing.join(", ")}` });
+    }
+    subArgs.push(sub.text);
+  }
+  command = subCommand.text;
+  args = subArgs;
   try {
     const { stdout, stderr } = await execFileAsync(command, args, {
       cwd,
@@ -661,7 +688,7 @@ export async function fulfillApproval(
   }
 
   const settings = await loadSettings();
-  const output = await executeShell(command, args, settings.workspace);
+  const output = await maskSecrets(await executeShell(command, args, settings.workspace));
   const shellMsg = await persistAssistant(botId, formatShellResult(output), "text");
   await emit(emitEvent, { type: "message", botId, message: shellMsg });
 
@@ -928,12 +955,16 @@ async function execTool(
             "request_form is unavailable in routine runs and teammate handoffs. Ask in plain text, or let the top-level Bot ask.",
         });
       }
+      // (schema handling continues below)
       const schema = validateFormSchema(args);
       if (!schema.ok) return JSON.stringify({ error: schema.error });
       // processToolCalls intercepts this payload, persists the card and pauses the turn.
       return JSON.stringify({ needsForm: true, form: schema.payload });
     }
     default:
+      if (mcpManager.hasTool(name)) {
+        return mcpManager.callTool(name, args);
+      }
       return JSON.stringify({ error: `unknown tool ${name}` });
   }
   } catch (err) {
@@ -1105,7 +1136,12 @@ async function processToolCalls(
   for (const call of toolCalls) {
     if (call.type !== "function") continue;
     const input = call.function.arguments ?? "{}";
-    const output = await execTool(agent, settings, call.function.name, input, nest, onEvent, groupThreadId, ctx.interactive);
+    // Every tool result passes the secret masker before the model, the
+    // transcript, or the UI sees it: a command or MCP server that echoes a
+    // vault value back gets scrubbed here.
+    const output = await maskSecrets(
+      await execTool(agent, settings, call.function.name, input, nest, onEvent, groupThreadId, ctx.interactive),
+    );
     await emit(onEvent, {
       type: "tool",
       botId: threadId,
@@ -1225,11 +1261,12 @@ async function streamCompletionRound(
   threadId: string,
   fromBotId: string,
   onEvent: (e: AgentEvent) => void,
+  tools: ChatCompletionTool[],
 ): Promise<{ content: string; toolCalls: StreamedToolCall[] }> {
   const stream = await openai.chat.completions.create({
     model,
     messages,
-    tools: TOOLS,
+    tools,
     tool_choice: "auto",
     stream: true,
   });
@@ -1309,6 +1346,7 @@ async function runAgentLoop(
         threadId,
         agent.id,
         onEvent,
+        ctx.tools,
       );
 
       if (toolCalls.length > 0) {
@@ -1339,7 +1377,7 @@ async function runAgentLoop(
   return finalText;
 }
 
-export async function runTurn(opts: {
+async function runTurnCore(opts: {
   botId: string;
   userText: string;
   nest?: number;
@@ -1457,6 +1495,7 @@ export async function runTurn(opts: {
     }
   }
 
+  const mcpTools = await mcpManager.getToolDefs().catch(() => [] as ChatCompletionTool[]);
   const ctx: LoopContext = {
     agent,
     threadId,
@@ -1466,6 +1505,7 @@ export async function runTurn(opts: {
     model,
     nest,
     interactive: nest === 0 && input.kind !== "routine",
+    tools: [...TOOLS, ...mcpTools],
   };
   const finalText = await runAgentLoop(ctx, messages, onEvent);
 
@@ -1478,4 +1518,56 @@ export async function runTurn(opts: {
   await emit(onEvent, { type: "status", botId: threadId, status: "idle", action: "Idle" });
   await emit(onEvent, { type: "done", botId: threadId });
   return finalText;
+}
+
+/**
+ * Public turn entry point. Wraps runTurnCore with routine-run recording:
+ * any top-level turn that resolves to a routine (typed /name in chat, the
+ * scheduler, or a webhook) is written to the run history with its trigger.
+ */
+export async function runTurn(opts: {
+  botId: string;
+  userText: string;
+  nest?: number;
+  onEvent?: (e: AgentEvent) => void;
+  fromBotId?: string;
+  groupThreadId?: string;
+  trigger?: RoutineRunTrigger;
+}): Promise<string> {
+  let runId: string | undefined;
+  if ((opts.nest ?? 0) === 0) {
+    const bot = await getBot(opts.botId).catch(() => undefined);
+    if (bot) {
+      const input = resolveRoutineInput(bot, opts.userText);
+      if (input.kind === "routine" && input.routineName) {
+        const routine = bot.routines?.find((r) => r.name === input.routineName);
+        if (routine) {
+          runId = randomUUID();
+          await recordRoutineRunStart({
+            id: runId,
+            botId: bot.id,
+            routineId: routine.id,
+            routineName: routine.name,
+            trigger: opts.trigger ?? "manual",
+            startedAt: new Date().toISOString(),
+            status: "running",
+          }).catch(() => undefined);
+        }
+      }
+    }
+  }
+  try {
+    const out = await runTurnCore(opts);
+    if (runId) await finishRoutineRun(runId, "ok").catch(() => undefined);
+    return out;
+  } catch (err) {
+    if (runId) {
+      await finishRoutineRun(
+        runId,
+        "error",
+        err instanceof Error ? err.message : String(err),
+      ).catch(() => undefined);
+    }
+    throw err;
+  }
 }

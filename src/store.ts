@@ -173,6 +173,7 @@ function parseBot(raw: unknown, fallbackId: string): Bot {
         schedule: String(r.schedule ?? ""),
         prompt: String(r.prompt ?? ""),
         enabled: r.enabled !== false,
+        webhookToken: r.webhookToken ? String(r.webhookToken) : undefined,
       };
     }),
   };
@@ -287,6 +288,12 @@ export async function resetRosterToSeed(): Promise<Bot[]> {
 
 export async function getBot(id: string): Promise<Bot | undefined> {
   return (await listBots()).find((b) => b.id === id);
+}
+
+/** Persist a Bot (roster YAML) after an in-place change, e.g. a routine webhook token. */
+export async function saveBot(bot: Bot): Promise<void> {
+  await ensureHome();
+  await writeFile(join(botsDir(), `${bot.id}.yaml`), stringify(bot));
 }
 
 function slugify(name: string): string {
@@ -566,6 +573,89 @@ export async function deleteSecret(name: string): Promise<boolean> {
   delete all[name];
   await writeSecrets(all);
   return true;
+}
+
+/**
+ * Raw values of every stored secret. SERVER-SIDE ONLY: used by the
+ * ${secret:name} substitution and by the output masker, which needs the
+ * values to scrub them out of tool results. Never expose over HTTP, never
+ * hand to a model, never log.
+ */
+export async function listSecretValues(): Promise<string[]> {
+  const all = await loadSecrets();
+  return Object.values(all)
+    .map((rec) => rec.value)
+    .filter((v) => typeof v === "string" && v.length > 0);
+}
+
+// ---------------------------------------------------------------------------
+// Routine runs: ~/.opengrokbot/routine-runs.json
+// Append-only history, trimmed to the last 20 runs per (bot, routine) — the
+// same retention the official product documents. Powers the Settings history
+// and proves webhook/schedule triggers actually fired.
+// ---------------------------------------------------------------------------
+
+import type { RoutineRun } from "./types.js";
+
+const MAX_RUNS_PER_ROUTINE = 20;
+const MAX_RUNS_TOTAL = 500;
+
+function routineRunsPath(): string {
+  return join(homeDir(), "routine-runs.json");
+}
+
+export async function loadRoutineRuns(): Promise<RoutineRun[]> {
+  await ensureHome();
+  if (!existsSync(routineRunsPath())) return [];
+  try {
+    const raw = JSON.parse(await readFile(routineRunsPath(), "utf8")) as RoutineRun[];
+    return Array.isArray(raw) ? raw : [];
+  } catch {
+    return [];
+  }
+}
+
+async function writeRoutineRuns(runs: RoutineRun[]): Promise<void> {
+  await writeFile(routineRunsPath(), JSON.stringify(runs, null, 2));
+}
+
+export async function recordRoutineRunStart(run: RoutineRun): Promise<void> {
+  const runs = await loadRoutineRuns();
+  runs.push(run);
+  const perRoutine = new Map<string, number>();
+  const kept: RoutineRun[] = [];
+  // Trim from the newest end: keep the newest MAX_RUNS_PER_ROUTINE per routine.
+  for (let i = runs.length - 1; i >= 0; i--) {
+    const key = `${runs[i].botId}:${runs[i].routineId}`;
+    const n = (perRoutine.get(key) ?? 0) + 1;
+    perRoutine.set(key, n);
+    if (n <= MAX_RUNS_PER_ROUTINE) kept.push(runs[i]);
+  }
+  kept.reverse();
+  await writeRoutineRuns(kept.slice(-MAX_RUNS_TOTAL));
+}
+
+export async function finishRoutineRun(
+  runId: string,
+  status: "ok" | "error",
+  detail?: string,
+): Promise<void> {
+  const runs = await loadRoutineRuns();
+  const idx = runs.findIndex((r) => r.id === runId);
+  if (idx < 0) return;
+  runs[idx] = {
+    ...runs[idx],
+    status,
+    finishedAt: new Date().toISOString(),
+    detail: detail ? detail.slice(0, 300) : undefined,
+  };
+  await writeRoutineRuns(runs);
+}
+
+export async function listRoutineRuns(botId?: string): Promise<RoutineRun[]> {
+  const runs = await loadRoutineRuns();
+  const filtered = botId ? runs.filter((r) => r.botId === botId) : runs;
+  return [...filtered].reverse();
 }
 
 function relativeTime(iso?: string): string {

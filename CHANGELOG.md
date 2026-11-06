@@ -1,5 +1,33 @@
 # Changelog
 
+## v0.4.0 — 2026-11-06
+
+Bots can finally reach outside the chat: MCP connectors, usable secrets,
+and event-triggered routines.
+
+- **MCP client (stdio)** — servers declared in `~/.opengrokbot/mcp.json` or
+  Settings → Connectors are spawned lazily, and their tools are offered to
+  every Bot as `mcp_<server>_<tool>` (HTTP harnesses: OpenAI-compatible and
+  Ollama; CLI harnesses do not expose tools yet). Server status, restart and
+  delete live in the same Settings pane.
+- **`${secret:name}` substitution** — shell commands/args and MCP server env
+  values may reference vault secrets. Substitution happens on this machine
+  at execution/spawn time; approval cards keep showing the placeholder.
+  Missing secrets fail the call with the missing names, never a value.
+- **Output masking** — every tool result (shell, MCP, workspace, handoffs)
+  is scanned for exact vault values before the model, the transcript, or
+  the UI sees it; echoes come back as `•••`. Verified end-to-end with a
+  fixture MCP server and a fake key: the key reached the child processes,
+  and only ever appeared in `secrets.json` and the intended side-effect
+  file — never in the transcript or the model's tool results.
+- **Routine webhook triggers** — `POST /api/hooks/routines/<botId>/<routineId>`
+  with the routine's `x-webhook-token` header (token generated/rotated in
+  Settings → Agent) fires the routine immediately and returns 202; an
+  optional `{ "text": "…" }` body is appended to the routine prompt.
+- **Routine run history** — schedule, webhook, and manual `/name` runs are
+  recorded in `~/.opengrokbot/routine-runs.json`, last 20 per routine
+  (the official product's documented retention), shown in Settings → Agent.
+
 ## v0.3.0 — 2026-11-06
 
 First tagged release since v0.1.0. Bundles the v0.2 desktop work (which shipped

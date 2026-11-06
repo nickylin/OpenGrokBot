@@ -50,12 +50,12 @@ pnpm install
 pnpm build:dmg
 ```
 
-产物在 `release/`（例如 `release/OpenGrokBot-0.3.0.dmg`、`release/OpenGrokBot-0.3.0-mac.zip`，以及 `release/mac/OpenGrokBot.app`）。
+产物在 `release/`（例如 `release/OpenGrokBot-0.4.0.dmg`、`release/OpenGrokBot-0.4.0-mac.zip`，以及 `release/mac/OpenGrokBot.app`）。
 
 若 `electron-builder` 在 DMG 步骤卡住，app 和 zip 仍然可用。可手动打 DMG：
 
 ```bash
-hdiutil create -volname "OpenGrokBot" -srcfolder release/mac/OpenGrokBot.app -ov -format UDZO release/OpenGrokBot-0.3.0.dmg
+hdiutil create -volname "OpenGrokBot" -srcfolder release/mac/OpenGrokBot.app -ov -format UDZO release/OpenGrokBot-0.4.0.dmg
 ```
 
 **安装未签名包：** macOS 可能拦截首次打开。请右键 **OpenGrokBot → 打开**，或执行：
@@ -72,7 +72,7 @@ pnpm dev:desktop
 
 会先跑 TypeScript 开发服务，等 `/api/health` 就绪后再打开 Electron 窗口。
 
-**v0.3.0 限制：** 系统 `PATH` 里要有 Node 20+（应用会调用本机 `node` 跑服务）。无代码签名或自动更新；已有菜单栏托盘，并可选用 macOS 登录项在登录后后台启动（托盘常驻）；关窗不会退出进程，需从托盘菜单 **Quit** 才完全退出。完全退出后定时 routine 不会跑（未安装独立 launchd 代理）。CLI 执行器（`codex`、`cursor`、`dsh`）仍需在本机单独安装。用户数据仍在 `~/.opengrokbot/`。
+**v0.4.0 限制：** 系统 `PATH` 里要有 Node 20+（应用会调用本机 `node` 跑服务）。无代码签名或自动更新；已有菜单栏托盘，并可选用 macOS 登录项在登录后后台启动（托盘常驻）；关窗不会退出进程，需从托盘菜单 **Quit** 才完全退出。完全退出后定时 routine 不会跑（未安装独立 launchd 代理）。CLI 执行器（`codex`、`cursor`、`dsh`）仍需在本机单独安装，且 MCP 工具、`${secret:}` 替换和表单卡目前只接了 HTTP 执行器（OpenAI 兼容 / Ollama），CLI 执行器没有。用户数据仍在 `~/.opengrokbot/`。
 
 ### 后台通知
 
@@ -98,15 +98,17 @@ pnpm dev:desktop
 | 上手 | 发一条消息，不是去搭工作流编辑器 | 一样 |
 | 价格 | Cursor / SuperGrok 订阅 | 免费。MIT |
 
-## v0.3 现在有什么
+## v0.4 现在有什么
 
 这是能跑起来的本机应用，不是只有一篇 README。
 
-**v0.3.0 新增**（v0.1.0 之后第一个正式打 tag 的版本，也包含未打 tag 的 v0.2 桌面版全部内容）：
+**v0.4.0 新增** — Bot 终于能伸到聊天之外：
 
-- **交互式表单卡 + 密钥字段** — Bot 可以用一张卡片收集结构化输入；密钥字段只写进 `~/.opengrokbot/secrets.json`（权限 0600），模型和聊天记录永远看不到明文。见下面两条。
+- **MCP 连接器（stdio）** — 在 `~/.opengrokbot/mcp.json` 或 Settings → Connectors 里声明服务器，它们的工具会以 `mcp_<服务器>_<工具>` 的名字出现在每一轮对话里。现成的 MCP server（文件系统、GitHub、Gmail 等）现在都是连接器。
+- **密钥从只存变成能用** — Shell 命令和 MCP 服务器的 env 里可以写 `${secret:name}`，执行那一刻在本机替换成真值；所有工具结果都会过一遍回显扫描，被回显出来的密钥值会被打码成 `•••`，永远不会原文回到模型面前。
+- **Routine 的 Webhook 触发 + 运行历史** — 每条 routine 可以领一个 webhook token（Settings → Agent），POST 一下立刻触发，正文 text 会追加到它的提示词后面。每次运行（定时、Webhook、手动打 /名字）都有记录，每条 routine 保留最近 20 次。
 
-完整历史：[CHANGELOG.md](CHANGELOG.md)。
+v0.3.0 加的是交互式表单卡 + 只写密钥字段；v0.2 加的是桌面应用。完整历史：[CHANGELOG.md](CHANGELOG.md)。
 
 **这个版本有**
 
@@ -122,8 +124,11 @@ pnpm dev:desktop
 - 跑 Shell 要过 Allow once / Always allow / Deny；**点 Allow 后会带着命令输出继续跑 agent 循环**
 - **交互式表单卡** — Bot 可以调用 `request_form`，用一张卡片一次收齐结构化输入（文本、数字、日期、单选、多选、开关），不用在聊天里一问一答；提交后带着类型干净的值恢复被暂停的那一轮
 - **密钥永远到不了模型** — 表单里 `secret` 类型的字段直接存进 `~/.opengrokbot/secrets.json`（权限 0600）；聊天记录和模型只能看到掩码引用（`provided` / `ref` / `last4`）。`GET /api/secrets` 只列掩码状态，`DELETE /api/secrets/:name` 删除一条——没有任何接口会返回明文
+- **MCP 连接器** — `~/.opengrokbot/mcp.json` 里声明的 stdio MCP 服务器（在 Settings → Connectors 管理），工具以 `mcp_<服务器>_<工具>` 暴露给每个 Bot；服务器 env 可以用 `${secret:name}` 引用保险库密钥，启动时替换
+- **Shell 命令里的 `${secret:name}`** — 执行那一刻在本机替换（审批卡上只显示占位符，永远看不到真值）；所有工具结果都过输出打码，被回显的密钥值在模型和聊天记录看到之前就被抹掉
 - **`/routine` 选择器** — 输入框里打 `/` 可触发 Bot 的 routine 提示词
 - **定时 Routine** — 进程内调度器在应用打开时到点触发启用的 routine（Settings → Agent → Host scheduler）
+- **Webhook 触发 Routine** — `POST /api/hooks/routines/<botId>/<routineId>` 带上该 routine 的 `x-webhook-token` 头立刻触发；`{ "text": "…" }` 会追加到提示词。所有触发方式的运行记录都在 `~/.opengrokbot/routine-runs.json`（每条保留最近 20 次，Settings → Agent 可看）
 - **后台通知** — 浏览器或 macOS 在回复完成、需要审批或 routine 触发时提醒
 - Settings → Agent：清空花名册，或重置为 `data/bots/` 里的 starter 配置
 - 右边「电脑」栏是状态预览（干活时图标变紫、壁纸跟时间走），不是一台真在跑的虚拟机
@@ -132,13 +137,15 @@ pnpm dev:desktop
 
 - 真浏览器 / computer-use
 - 完全退出后的后台定时（登录项只会启动应用；routine 仍需应用进程在跑）
-- MCP 连接器
+- MCP 的 HTTP/SSE 传输，以及 CLI 执行器下的 MCP（现在只有 stdio + HTTP 执行器）
+- 独立的 Skills 技能库（技能目前挂在 routine 上）
+- 语音输入、聊天附件
 - Auto Review 模型
 - 合上笔记本还继续干活
 
 下面那份官方清单是方向，不是「今天每一项都接好了」。
 
-<img src="./docs/map.svg" alt="v0.3 产品图：花名册、聊天、记忆和文件、shell 审批" width="640" />
+<img src="./docs/map.svg" alt="v0.4 产品图：花名册、聊天、记忆和文件、shell 审批" width="640" />
 
 ## 界面与在场感
 
@@ -220,6 +227,8 @@ OpenGrokBot 跑在你这台机器上。盖子一合，团队就停。
 |---|---|
 | `~/.opengrokbot/settings.json` | API key、模型、路径 |
 | `~/.opengrokbot/secrets.json` | 表单卡收集的密钥（权限 0600，接口只写不读明文） |
+| `~/.opengrokbot/mcp.json` | MCP 服务器声明（命令、参数、env；env 可用 `${secret:name}`） |
+| `~/.opengrokbot/routine-runs.json` | Routine 运行历史（每条保留最近 20 次） |
 | `~/.opengrokbot/bots/` | 花名册 YAML（首次从 `data/bots/` 拷贝） |
 | `~/.opengrokbot/transcripts/` | 聊天记录 |
 | `~/.opengrokbot/memory/` | 每个 Bot 一份 `MEMORY.md` |

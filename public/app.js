@@ -1576,6 +1576,7 @@ function renderSettings() {
   const titles = {
     harness: "Harness",
     models: "Models",
+    connectors: "Connectors",
     permissions: "Permissions",
     agent: "Agent",
     approvals: "Approvals",
@@ -1764,6 +1765,10 @@ function renderSettings() {
       });
     });
   }
+  if (setPane === "connectors") {
+    body.innerHTML = `<p class="set-caption">Loading MCP servers…</p>`;
+    void renderMcpPane(body);
+  }
   if (setPane === "permissions") {
     body.innerHTML = `
       <div class="field">
@@ -1828,6 +1833,11 @@ function renderSettings() {
           <button type="button" class="btn danger" id="resetRoster">Reset to starter roster</button>
         </div>
       </div>
+      <div class="field">
+        <label>Routine webhooks &amp; history</label>
+        <div class="hint">Every routine run (schedule, webhook, or typed /name) is recorded; the last 20 per routine are kept. A webhook POST with the routine's token runs it right away — the body text is appended to its prompt.</div>
+        <div id="routineRunsBox" style="margin-top:8px"><div class="hint">Loading…</div></div>
+      </div>
     `;
     bindFields({ "f-tz": "timezone" });
     bindSeg("scheduler", "scheduler");
@@ -1857,6 +1867,7 @@ function renderSettings() {
     renderNotificationPermHint();
     $("clearRoster")?.addEventListener("click", () => void clearRosterAction());
     $("resetRoster")?.addEventListener("click", () => void resetRosterAction());
+    if ($("routineRunsBox")) void renderRoutineRunsBox($("routineRunsBox"));
   }
   if (setPane === "approvals") {
     body.innerHTML = `
@@ -1916,6 +1927,193 @@ function renderSettings() {
       });
     });
   }
+}
+
+async function renderMcpPane(body) {
+  let data;
+  try {
+    data = await api("/api/mcp");
+  } catch (err) {
+    body.innerHTML = `<p class="set-caption">Could not load MCP servers: ${esc(err.message)}</p>`;
+    return;
+  }
+  if (setPane !== "connectors") return;
+  const byName = new Map((data.configs || []).map((c) => [c.name, c]));
+  const rows = (data.servers || [])
+    .map((s) => {
+      const stateLabel =
+        s.state === "ready" ? `Ready · ${s.toolCount} tool${s.toolCount === 1 ? "" : "s"}` : s.state;
+      const tools = s.tools?.length ? `<div class="hint">${esc(s.tools.join(", "))}</div>` : "";
+      const err = s.error ? `<div class="hint" style="color:var(--danger,#d46a6a)">${esc(s.error)}</div>` : "";
+      return `<div class="hrow${s.state === "ready" ? " on" : ""}">
+        <span class="hdot" aria-hidden="true"></span>
+        <span>
+          <span class="name">${esc(s.name)}</span>
+          <div class="sub">${esc(s.command)}</div>
+          ${tools}${err}
+        </span>
+        <span class="meta">${esc(stateLabel)}</span>
+        <span class="actions" style="margin:0">
+          <button type="button" class="btn ghost" data-mcp-restart="${esc(s.name)}">Restart</button>
+          <button type="button" class="btn ghost" data-mcp-del="${esc(s.name)}">Delete</button>
+        </span>
+      </div>`;
+    })
+    .join("");
+  body.innerHTML = `
+    <p class="set-caption">MCP servers (stdio) run on this machine; their tools appear in every Bot turn as mcp_&lt;server&gt;_&lt;tool&gt;. Config lives in ~/.opengrokbot/mcp.json. Env values may use \${secret:name} — substituted at launch from the vault, never shown to the model.</p>
+    <div class="hlist">${rows || `<p class="set-caption">No MCP servers yet. Add one below — for example the filesystem server.</p>`}</div>
+    <div class="field">
+      <label>Add or update a server</label>
+      <input id="mcp-name" placeholder="Name, e.g. fs" />
+      <input id="mcp-command" placeholder="Command, e.g. npx" style="margin-top:8px" />
+      <textarea id="mcp-args" rows="3" placeholder="Args, one per line, e.g.&#10;-y&#10;@modelcontextprotocol/server-filesystem&#10;/Users/you/Documents" style="margin-top:8px"></textarea>
+      <textarea id="mcp-env" rows="2" placeholder="Env, one KEY=value per line. Values may use \${secret:name}" style="margin-top:8px"></textarea>
+      <div class="actions">
+        <button class="btn primary" id="mcp-save">Save server</button>
+      </div>
+      <div class="hint">Saving restarts that server. Servers start lazily on the first Bot turn that needs them.</div>
+    </div>
+  `;
+  body.querySelectorAll("[data-mcp-restart]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      try {
+        await api(`/api/mcp/servers/${encodeURIComponent(btn.dataset.mcpRestart)}/restart`, {
+          method: "POST",
+          body: "{}",
+        });
+        toast(`Restarted ${btn.dataset.mcpRestart}`);
+      } catch (err) {
+        toast(err.message);
+      }
+      renderSettings();
+    });
+  });
+  body.querySelectorAll("[data-mcp-del]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      try {
+        await api(`/api/mcp/servers/${encodeURIComponent(btn.dataset.mcpDel)}`, { method: "DELETE" });
+        toast(`Deleted ${btn.dataset.mcpDel}`);
+      } catch (err) {
+        toast(err.message);
+      }
+      renderSettings();
+    });
+  });
+  $("mcp-save")?.addEventListener("click", async () => {
+    const name = $("mcp-name").value.trim();
+    const command = $("mcp-command").value.trim();
+    const args = $("mcp-args").value.split("\n").map((s) => s.trim()).filter(Boolean);
+    const env = {};
+    for (const line of $("mcp-env").value.split("\n")) {
+      const t = line.trim();
+      if (!t) continue;
+      const i = t.indexOf("=");
+      if (i > 0) env[t.slice(0, i).trim()] = t.slice(i + 1).trim();
+    }
+    if (!name || !command) {
+      toast("Name and command are required");
+      return;
+    }
+    try {
+      await api("/api/mcp/servers", {
+        method: "POST",
+        body: JSON.stringify({ name, command, args, env, enabled: true }),
+      });
+      toast(`Saved MCP server ${name}`);
+      renderSettings();
+    } catch (err) {
+      toast(err.message);
+    }
+  });
+  void byName;
+}
+
+async function renderRoutineRunsBox(box) {
+  let botsData;
+  let runsData;
+  try {
+    [botsData, runsData] = await Promise.all([api("/api/bots"), api("/api/routine-runs")]);
+  } catch (err) {
+    box.innerHTML = `<div class="hint">Could not load routine history: ${esc(err.message)}</div>`;
+    return;
+  }
+  const runs = runsData.runs || [];
+  const lastRunFor = (botId, routineId) =>
+    runs.find((r) => r.botId === botId && r.routineId === routineId);
+  const fmtRun = (r) => {
+    if (!r) return "Never run";
+    const when = new Date(r.startedAt).toLocaleString();
+    return `${when} · ${r.trigger} · ${r.status}`;
+  };
+  const blocks = [];
+  for (const bot of botsData.bots || []) {
+    if (bot.kind === "group") continue;
+    for (const r of bot.routines || []) {
+      const last = lastRunFor(bot.id, r.id);
+      let hook;
+      if (r.webhookToken) {
+        const url = `${location.origin}/api/hooks/routines/${bot.id}/${r.id}`;
+        const curl = `curl -X POST ${url} -H "x-webhook-token: ${r.webhookToken}" -H "Content-Type: application/json" -d '{"text":"your event payload"}'`;
+        hook = `<div class="hint">Webhook: <code>${esc(url)}</code></div>
+          <div class="actions" style="margin-top:6px">
+            <button type="button" class="btn ghost" data-copy="${esc(curl)}">Copy curl</button>
+            <button type="button" class="btn ghost" data-hook-rotate="${esc(bot.id)}:${esc(r.id)}">Rotate token</button>
+            <button type="button" class="btn ghost" data-hook-off="${esc(bot.id)}:${esc(r.id)}">Disable webhook</button>
+          </div>`;
+      } else {
+        hook = `<div class="actions" style="margin-top:6px">
+            <button type="button" class="btn ghost" data-hook-on="${esc(bot.id)}:${esc(r.id)}">Enable webhook trigger</button>
+          </div>`;
+      }
+      blocks.push(`<div class="field">
+        <label>${esc(bot.name)} · /${esc(r.name)}</label>
+        <div class="hint">Last run: ${esc(fmtRun(last))}${last?.detail ? ` · ${esc(last.detail)}` : ""}</div>
+        ${hook}
+      </div>`);
+    }
+  }
+  box.innerHTML = blocks.length
+    ? blocks.join("")
+    : `<div class="hint">No routines yet. Routines live in each Bot's YAML under ~/.opengrokbot/bots/.</div>`;
+  box.querySelectorAll("[data-copy]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(btn.dataset.copy || "");
+        toast("Copied");
+      } catch {
+        toast(btn.dataset.copy || "Copy failed");
+      }
+    });
+  });
+  box.querySelectorAll("[data-hook-on], [data-hook-rotate]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const raw = btn.dataset.hookOn || btn.dataset.hookRotate;
+      const [botId, routineId] = raw.split(":");
+      try {
+        await api(`/api/bots/${botId}/routines/${routineId}/webhook-token`, {
+          method: "POST",
+          body: "{}",
+        });
+        toast("Webhook token saved");
+        renderSettings();
+      } catch (err) {
+        toast(err.message);
+      }
+    });
+  });
+  box.querySelectorAll("[data-hook-off]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const [botId, routineId] = btn.dataset.hookOff.split(":");
+      try {
+        await api(`/api/bots/${botId}/routines/${routineId}/webhook-token`, { method: "DELETE" });
+        toast("Webhook disabled");
+        renderSettings();
+      } catch (err) {
+        toast(err.message);
+      }
+    });
+  });
 }
 
 async function refreshHarnesses() {
