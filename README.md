@@ -50,12 +50,12 @@ pnpm install
 pnpm build:dmg
 ```
 
-Artifacts land in `release/` (for example `release/OpenGrokBot-0.2.1.dmg`, `release/OpenGrokBot-0.2.1-mac.zip`, and `release/mac/OpenGrokBot.app`).
+Artifacts land in `release/` (for example `release/OpenGrokBot-0.3.0.dmg`, `release/OpenGrokBot-0.3.0-mac.zip`, and `release/mac/OpenGrokBot.app`).
 
 If `electron-builder` hangs on the DMG step, the app bundle and zip are still valid. Create a DMG manually:
 
 ```bash
-hdiutil create -volname "OpenGrokBot" -srcfolder release/mac/OpenGrokBot.app -ov -format UDZO release/OpenGrokBot-0.2.1.dmg
+hdiutil create -volname "OpenGrokBot" -srcfolder release/mac/OpenGrokBot.app -ov -format UDZO release/OpenGrokBot-0.3.0.dmg
 ```
 
 **Install an unsigned build:** macOS may block the first launch. Right-click **OpenGrokBot → Open**, or run:
@@ -72,7 +72,7 @@ pnpm dev:desktop
 
 This runs the TypeScript dev server and opens Electron once `/api/health` responds.
 
-**Limitations (v0.2.1):** requires Node 20+ on `PATH` (the app spawns your system `node` to run the server). No code signing or auto-update. Menu-bar tray and optional **login at startup** (macOS Login Item, background tray) are included: closing the window keeps the server running until you quit from the tray. After a full **Quit**, scheduled routines do not run until you open the app again (no separate launchd agent). CLI harnesses (`codex`, `cursor`, `dsh`) still need separate install on the machine. User data stays in `~/.opengrokbot/` either way.
+**Limitations (v0.3.0):** requires Node 20+ on `PATH` (the app spawns your system `node` to run the server). No code signing or auto-update. Menu-bar tray and optional **login at startup** (macOS Login Item, background tray) are included: closing the window keeps the server running until you quit from the tray. After a full **Quit**, scheduled routines do not run until you open the app again (no separate launchd agent). CLI harnesses (`codex`, `cursor`, `dsh`) still need separate install on the machine. User data stays in `~/.opengrokbot/` either way.
 
 ### Background notifications
 
@@ -98,9 +98,15 @@ Official Grok Bot ([docs](https://docs.x.ai/grok-bot/overview)): named teammates
 | Setup | A message, not a workflow builder | Same |
 | Price | Cursor / SuperGrok plan | Free. MIT |
 
-## What v0.2 ships
+## What v0.3 ships
 
 This is a working local app, not a README stub.
+
+**New in v0.3.0** (first tagged release since v0.1.0 — it also bundles everything from the untagged v0.2 desktop release):
+
+- **Interactive form cards + secret fields** — Bots can ask for structured input in one card, and secret fields are stored write-only in `~/.opengrokbot/secrets.json` (mode 0600) so they never reach the model or the transcript. See the two entries below.
+
+Full history: [CHANGELOG.md](CHANGELOG.md).
 
 **In this release**
 
@@ -132,7 +138,7 @@ This is a working local app, not a README stub.
 
 The rest of the official list below is the north star, not a claim that every item is wired today.
 
-<img src="./docs/map.svg" alt="v0.2 map: roster, chat, memory and files, shell approvals" width="640" />
+<img src="./docs/map.svg" alt="v0.3 map: roster, chat, memory and files, shell approvals" width="640" />
 
 ## UI and presence
 
@@ -202,7 +208,7 @@ Tell it what to do, where to work, what finished looks like. Correct it. Turn th
 
 Official Bots keep working when your laptop is closed. That needs their cloud computer.
 
-OpenGrokBot runs on the host OS. Close the lid, the team stops. In exchange: no $120–300/month seat, no logins sitting in someone else’s VM, no waiting on a Bot API that does not exist.
+OpenGrokBot runs on the host OS. Close the lid, the team stops. In exchange: no paid seat at all — the official Bot now rides along with paid plans (X Premium, from $30/month), while this one stays free and MIT — no logins sitting in someone else’s VM, no waiting on a Bot API that does not exist.
 
 If you need 24/7, keep a small machine awake — or stay on official Grok Bot.
 

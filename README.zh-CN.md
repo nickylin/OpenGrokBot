@@ -50,12 +50,12 @@ pnpm install
 pnpm build:dmg
 ```
 
-产物在 `release/`（例如 `release/OpenGrokBot-0.2.1.dmg`、`release/OpenGrokBot-0.2.1-mac.zip`，以及 `release/mac/OpenGrokBot.app`）。
+产物在 `release/`（例如 `release/OpenGrokBot-0.3.0.dmg`、`release/OpenGrokBot-0.3.0-mac.zip`，以及 `release/mac/OpenGrokBot.app`）。
 
 若 `electron-builder` 在 DMG 步骤卡住，app 和 zip 仍然可用。可手动打 DMG：
 
 ```bash
-hdiutil create -volname "OpenGrokBot" -srcfolder release/mac/OpenGrokBot.app -ov -format UDZO release/OpenGrokBot-0.2.1.dmg
+hdiutil create -volname "OpenGrokBot" -srcfolder release/mac/OpenGrokBot.app -ov -format UDZO release/OpenGrokBot-0.3.0.dmg
 ```
 
 **安装未签名包：** macOS 可能拦截首次打开。请右键 **OpenGrokBot → 打开**，或执行：
@@ -72,7 +72,7 @@ pnpm dev:desktop
 
 会先跑 TypeScript 开发服务，等 `/api/health` 就绪后再打开 Electron 窗口。
 
-**v0.2.1 限制：** 系统 `PATH` 里要有 Node 20+（应用会调用本机 `node` 跑服务）。无代码签名或自动更新；已有菜单栏托盘，并可选用 macOS 登录项在登录后后台启动（托盘常驻）；关窗不会退出进程，需从托盘菜单 **Quit** 才完全退出。完全退出后定时 routine 不会跑（未安装独立 launchd 代理）。CLI 执行器（`codex`、`cursor`、`dsh`）仍需在本机单独安装。用户数据仍在 `~/.opengrokbot/`。
+**v0.3.0 限制：** 系统 `PATH` 里要有 Node 20+（应用会调用本机 `node` 跑服务）。无代码签名或自动更新；已有菜单栏托盘，并可选用 macOS 登录项在登录后后台启动（托盘常驻）；关窗不会退出进程，需从托盘菜单 **Quit** 才完全退出。完全退出后定时 routine 不会跑（未安装独立 launchd 代理）。CLI 执行器（`codex`、`cursor`、`dsh`）仍需在本机单独安装。用户数据仍在 `~/.opengrokbot/`。
 
 ### 后台通知
 
@@ -98,9 +98,15 @@ pnpm dev:desktop
 | 上手 | 发一条消息，不是去搭工作流编辑器 | 一样 |
 | 价格 | Cursor / SuperGrok 订阅 | 免费。MIT |
 
-## v0.2 现在有什么
+## v0.3 现在有什么
 
 这是能跑起来的本机应用，不是只有一篇 README。
+
+**v0.3.0 新增**（v0.1.0 之后第一个正式打 tag 的版本，也包含未打 tag 的 v0.2 桌面版全部内容）：
+
+- **交互式表单卡 + 密钥字段** — Bot 可以用一张卡片收集结构化输入；密钥字段只写进 `~/.opengrokbot/secrets.json`（权限 0600），模型和聊天记录永远看不到明文。见下面两条。
+
+完整历史：[CHANGELOG.md](CHANGELOG.md)。
 
 **这个版本有**
 
@@ -114,6 +120,8 @@ pnpm dev:desktop
 - **气泡 Markdown** — 表格、分隔线、标题、列表、粗体、行内代码、代码块、链接
 - 每个 Bot 一份 markdown 记忆，磁盘上还有一份共用工作区
 - 跑 Shell 要过 Allow once / Always allow / Deny；**点 Allow 后会带着命令输出继续跑 agent 循环**
+- **交互式表单卡** — Bot 可以调用 `request_form`，用一张卡片一次收齐结构化输入（文本、数字、日期、单选、多选、开关），不用在聊天里一问一答；提交后带着类型干净的值恢复被暂停的那一轮
+- **密钥永远到不了模型** — 表单里 `secret` 类型的字段直接存进 `~/.opengrokbot/secrets.json`（权限 0600）；聊天记录和模型只能看到掩码引用（`provided` / `ref` / `last4`）。`GET /api/secrets` 只列掩码状态，`DELETE /api/secrets/:name` 删除一条——没有任何接口会返回明文
 - **`/routine` 选择器** — 输入框里打 `/` 可触发 Bot 的 routine 提示词
 - **定时 Routine** — 进程内调度器在应用打开时到点触发启用的 routine（Settings → Agent → Host scheduler）
 - **后台通知** — 浏览器或 macOS 在回复完成、需要审批或 routine 触发时提醒
@@ -130,7 +138,7 @@ pnpm dev:desktop
 
 下面那份官方清单是方向，不是「今天每一项都接好了」。
 
-<img src="./docs/map.svg" alt="v0.2 产品图：花名册、聊天、记忆和文件、shell 审批" width="640" />
+<img src="./docs/map.svg" alt="v0.3 产品图：花名册、聊天、记忆和文件、shell 审批" width="640" />
 
 ## 界面与在场感
 
@@ -202,7 +210,7 @@ CLI 类引擎若未安装，设置页会给可复制安装命令。HTTP 引擎�
 
 OpenGrokBot 跑在你这台机器上。盖子一合，团队就停。
 
-换来的是：不用每月付 $120–300 的席位费，登录信息也不用丢进别人的虚拟机。
+换来的是：不用付任何席位费（官方 Grok Bot 已并入 X Premium 等付费计划，$30/月起；这边免费、MIT），登录信息也不用丢进别人的虚拟机。
 
 如果你必须 24 小时不停，留一台小机器别休眠——或者继续用官方 Grok Bot。
 
@@ -211,6 +219,7 @@ OpenGrokBot 跑在你这台机器上。盖子一合，团队就停。
 | 路径 | 内容 |
 |---|---|
 | `~/.opengrokbot/settings.json` | API key、模型、路径 |
+| `~/.opengrokbot/secrets.json` | 表单卡收集的密钥（权限 0600，接口只写不读明文） |
 | `~/.opengrokbot/bots/` | 花名册 YAML（首次从 `data/bots/` 拷贝） |
 | `~/.opengrokbot/transcripts/` | 聊天记录 |
 | `~/.opengrokbot/memory/` | 每个 Bot 一份 `MEMORY.md` |
