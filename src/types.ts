@@ -142,12 +142,22 @@ export type ChatMessage = {
   content: string;
   createdAt: string;
   toolName?: string;
-  kind?: "text" | "handoff" | "routine" | "approval" | "system" | "form";
+  kind?: "text" | "handoff" | "routine" | "approval" | "system" | "form" | "skill";
   fromBotId?: string;
   routineName?: string;
+  /** Only for kind === "skill": the invoked skill's id. */
+  skillName?: string;
   decision?: ApprovalDecision;
   /** Only for kind === "form". */
   formStatus?: FormStatus;
+};
+
+/** A reusable skill: markdown instructions in ~/.opengrokbot/skills/<id>.md. */
+export type SkillDef = {
+  id: string;
+  name: string;
+  description: string;
+  body: string;
 };
 
 export type AgentEvent =

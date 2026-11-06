@@ -732,3 +732,52 @@ export async function readMemory(botId: string): Promise<string> {
 export async function writeMemory(botId: string, content: string): Promise<void> {
   await writeFile(await memoryFile(botId), content);
 }
+
+function normalizeMemoryLine(line: string): string {
+  return line
+    .replace(/^[\s>*#•-]+/, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+/**
+ * Import memory exported from another AI assistant (a pasted list of
+ * facts/preferences) into this Bot's MEMORY.md. Lines already present —
+ * in the existing memory or earlier in the same paste — are skipped, so
+ * re-importing the same export is a no-op. Imported lines land under a
+ * dated heading so their provenance stays visible.
+ */
+export async function importBotMemory(
+  botId: string,
+  text: string,
+): Promise<{ added: number; skipped: number; total: number }> {
+  const existing = await readMemory(botId);
+  const seen = new Set(
+    existing
+      .split("\n")
+      .map(normalizeMemoryLine)
+      .filter((l) => l.length >= 3),
+  );
+  const fresh: string[] = [];
+  let skipped = 0;
+  let total = 0;
+  for (const raw of text.split("\n")) {
+    const line = raw.replace(/^[\s>*•-]+/, "").trim();
+    if (line.length < 3 || /^#{1,6}\s/.test(raw.trim())) continue;
+    total += 1;
+    const key = normalizeMemoryLine(line);
+    if (seen.has(key)) {
+      skipped += 1;
+      continue;
+    }
+    seen.add(key);
+    fresh.push(line);
+  }
+  if (fresh.length) {
+    const stamp = new Date().toISOString().slice(0, 10);
+    const block = `## Imported memory (${stamp})\n${fresh.map((l) => `- ${l}`).join("\n")}\n`;
+    await writeMemory(botId, existing.trim() ? `${existing.trimEnd()}\n\n${block}` : block);
+  }
+  return { added: fresh.length, skipped, total };
+}

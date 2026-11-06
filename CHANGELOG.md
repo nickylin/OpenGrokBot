@@ -1,5 +1,29 @@
 # Changelog
 
+## v0.5.0 — 2026-11-07
+
+A shared playbook for Bots, an on-ramp for another assistant's memory,
+and a voice.
+
+- **Skills library** — skills are markdown files with YAML frontmatter in
+  `~/.opengrokbot/skills/` (seeded with deep-research and weekly-review),
+  managed in the new Settings → Skills pane. Typing `/<skill-id> task` in
+  chat preloads the skill as the turn's instructions (shown as a chip);
+  skill descriptions are also listed in every Bot's system prompt, and
+  Bots can load one mid-task with the new `skill_read` tool. The `/`
+  picker now lists routines and skills together. (The first seeded
+  weekly-review file shipped with an unquoted `: ` in its description,
+  which made its frontmatter unparseable — caught and fixed in testing.)
+- **Memory import** — `POST /api/bots/:id/memory/import` (and a paste box
+  in Settings → Agent) merges a memory export from another assistant into
+  the Bot's MEMORY.md: candidates are deduplicated line-by-line against
+  existing memory and within the paste, and appended under a dated
+  `## Imported memory` heading. Re-importing the same export adds 0.
+- **Voice dictation** — the composer gains a mic button backed by the Web
+  Speech API: interim results stream into the input box, finals append,
+  nothing is auto-sent. The button stays hidden in browsers/shells
+  without speech recognition support.
+
 ## v0.4.0 — 2026-11-06
 
 Bots can finally reach outside the chat: MCP connectors, usable secrets,

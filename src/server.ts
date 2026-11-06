@@ -9,6 +9,7 @@ import {
   deleteSecret,
   expirePendingForms,
   getBot,
+  importBotMemory,
   listRoster,
   listRoutineRuns,
   listSecretStatuses,
@@ -18,6 +19,7 @@ import {
   saveBot,
   saveSettings,
 } from "./store.js";
+import { deleteSkill, listSkills, saveSkill } from "./skills.js";
 import { loadMcpConfig, mcpManager } from "./mcp.js";
 import { randomBytes } from "node:crypto";
 import type { McpServerConfig } from "./types.js";
@@ -310,6 +312,49 @@ export async function startServer(): Promise<void> {
   app.get<{ Querystring: { botId?: string } }>("/api/routine-runs", async (req) => ({
     runs: await listRoutineRuns(req.query.botId),
   }));
+
+  // ---- Skills library (~/.opengrokbot/skills/*.md, shared by all Bots) ----
+  app.get("/api/skills", async () => ({ skills: await listSkills() }));
+
+  app.post<{ Body: { id?: string; name?: string; description?: string; body?: string } }>(
+    "/api/skills",
+    async (req, reply) => {
+      const b = req.body ?? {};
+      if (!b.name?.trim()) return reply.code(400).send({ error: "name required" });
+      try {
+        const skill = await saveSkill({
+          id: b.id,
+          name: b.name,
+          description: b.description,
+          body: b.body ?? "",
+        });
+        return { ok: true, skill };
+      } catch (err) {
+        return reply.code(400).send({ error: err instanceof Error ? err.message : "invalid skill" });
+      }
+    },
+  );
+
+  app.delete<{ Params: { id: string } }>("/api/skills/:id", async (req, reply) => {
+    const removed = await deleteSkill(req.params.id);
+    if (!removed) return reply.code(404).send({ error: "unknown skill" });
+    return { ok: true };
+  });
+
+  // Import memory exported from another AI assistant into a Bot's
+  // MEMORY.md. Dedupes against what's already there; returns counts.
+  app.post<{ Params: { id: string }; Body: { text?: string } }>(
+    "/api/bots/:id/memory/import",
+    async (req, reply) => {
+      const bot = await getBot(req.params.id);
+      if (!bot) return reply.code(404).send({ error: "unknown bot" });
+      const text = String(req.body?.text ?? "");
+      if (text.length > 200_000) return reply.code(413).send({ error: "import text too large" });
+      if (!text.trim()) return reply.code(400).send({ error: "nothing to import" });
+      const result = await importBotMemory(bot.id, text);
+      return { ok: true, ...result };
+    },
+  );
 
   // Generate or rotate a routine's webhook token. The token is stored on the
   // routine itself (roster YAML on this machine) and returned here so the UI

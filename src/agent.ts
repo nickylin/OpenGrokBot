@@ -46,6 +46,7 @@ import { validateFormSchema, validateSubmission } from "./forms.js";
 import type { FormCardPayload } from "./types.js";
 import { mcpManager } from "./mcp.js";
 import { maskSecrets, substituteSecrets } from "./secrets.js";
+import { getSkill, listSkills } from "./skills.js";
 import { finishRoutineRun, recordRoutineRunStart } from "./store.js";
 import type { RoutineRunTrigger } from "./types.js";
 
@@ -79,6 +80,35 @@ const pendingTurns = new Map<string, PendingTurn>();
 
 export function hasPendingTurn(botId: string): boolean {
   return pendingTurns.has(botId);
+}
+
+type ResolvedInput = {
+  display: string;
+  modelText: string;
+  kind: ChatMessage["kind"];
+  routineName?: string;
+  skillName?: string;
+};
+
+/**
+ * A leading /<name> that matches no routine of this Bot may invoke a
+ * shared skill: the skill's instructions become the turn's prompt, with
+ * any trailing text appended as the task.
+ */
+async function resolveSkillInput(userText: string): Promise<ResolvedInput | null> {
+  const m = userText.trim().match(/^\/([^\s/]+)(?:\s+([\s\S]*))?$/);
+  if (!m) return null;
+  const skill = await getSkill(m[1]);
+  if (!skill) return null;
+  const tail = (m[2] ?? "").trim();
+  const header = `[Skill: ${skill.name}] Follow these instructions for this task.`;
+  const modelText = tail ? `${header}\n\n${skill.body}\n\n${tail}` : `${header}\n\n${skill.body}`;
+  return {
+    display: `/${skill.id}${tail ? ` ${tail}` : ""}`,
+    modelText,
+    kind: "skill",
+    skillName: skill.id,
+  };
 }
 
 function resolveRoutineInput(
@@ -199,6 +229,19 @@ const TOOLS: ChatCompletionTool[] = [
           args: { type: "array", items: { type: "string" } },
         },
         required: ["command"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "skill_read",
+      description:
+        "Load a shared skill's full instructions by id or name. Skills are listed in your system prompt with one-line descriptions; when a task matches one, call this first and follow the instructions it returns.",
+      parameters: {
+        type: "object",
+        properties: { name: { type: "string", description: "Skill id or name, e.g. deep-research" } },
+        required: ["name"],
       },
     },
   },
@@ -918,6 +961,17 @@ async function execTool(
       }
       return JSON.stringify({ botId: target.id, name: target.name, reply });
     }
+    case "skill_read": {
+      const skill = await getSkill(String(args.name ?? ""));
+      if (!skill) {
+        const all = await listSkills();
+        return JSON.stringify({
+          error: "unknown skill",
+          available: all.map((s) => s.id),
+        });
+      }
+      return `[Skill: ${skill.name}]\n\n${skill.body}`;
+    }
     case "memory_read":
       return (await readMemory(agent.id)) || "(empty)";
     case "memory_write":
@@ -1417,19 +1471,26 @@ async function runTurnCore(opts: {
     settings.baseUrl.includes("127.0.0.1") || settings.baseUrl.includes("localhost");
   const groupThreadId = group ? group.id : opts.groupThreadId;
 
-  const input =
-    nest === 0
-      ? resolveRoutineInput(bot, opts.userText)
-      : { display: opts.userText, modelText: opts.userText, kind: "handoff" as const };
+  let input: ResolvedInput;
+  if (nest === 0) {
+    const resolved = resolveRoutineInput(bot, opts.userText);
+    input =
+      resolved.kind === "text"
+        ? ((await resolveSkillInput(opts.userText)) ?? resolved)
+        : resolved;
+  } else {
+    input = { display: opts.userText, modelText: opts.userText, kind: "handoff" as const };
+  }
 
   const userMsg: ChatMessage = {
     id: randomUUID(),
     role: "user",
-    content: input.kind === "routine" ? input.modelText : input.display,
+    content: input.kind === "routine" || input.kind === "skill" ? input.modelText : input.display,
     createdAt: new Date().toISOString(),
     kind: nest > 0 ? "handoff" : input.kind,
     fromBotId: opts.fromBotId,
     routineName: input.routineName,
+    skillName: input.skillName,
   };
   if (nest === 0) {
     await appendMessage(threadId, userMsg);
@@ -1486,7 +1547,13 @@ async function runTurnCore(opts: {
   const model = nest > 0 && settings.subagentModel ? settings.subagentModel : settings.model;
   const history = await loadTranscript(nest === 0 ? threadId : agent.id);
   const usable = history.filter((m) => m.role === "user" || m.role === "assistant");
-  const extra = mentionContext;
+  const skills = await listSkills().catch(() => []);
+  const skillsBlock = skills.length
+    ? `Shared skills on this machine (the user can invoke one by typing /<id>; you can load one mid-task with skill_read when a task matches its description):\n${skills
+        .map((s) => `- ${s.id} — ${s.description || s.name}`)
+        .join("\n")}`
+    : "";
+  const extra = [mentionContext, skillsBlock].filter(Boolean).join("\n");
   const messages = toOpenAI(usable, systemPrompt(agent, settings, extra, group, rosterContext));
   for (let i = messages.length - 1; i >= 0; i--) {
     if (messages[i].role === "user") {

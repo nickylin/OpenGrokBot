@@ -323,6 +323,16 @@ function syncOpenAtLogin(enabled) {
 const PROFILE_COLORS = ["#E8B86D", "#5EC8B5", "#F5A54A", "#4A6FA5", "#8B6CF7", "#3D8BFF", "#E07A3D"];
 
 let bots = [];
+let skillsCache = [];
+
+async function refreshSkills() {
+  try {
+    const data = await api("/api/skills");
+    skillsCache = data.skills || [];
+  } catch {
+    skillsCache = [];
+  }
+}
 let messages = [];
 let selected = "";
 let computer = "off";
@@ -1090,6 +1100,10 @@ function renderMessage(m, fresh) {
     const label = m.routineName ? `/${m.routineName}` : m.content.split("\n")[0];
     return `<div class="routine-chip${enter}">${linkMentions(esc(label))}</div>`;
   }
+  if (kind === "skill") {
+    const label = m.skillName ? `/${m.skillName}` : m.content.split("\n")[0];
+    return `<div class="routine-chip${enter}">${linkMentions(esc(label))}</div>`;
+  }
   if (kind === "system" || looksLikeClientDump(m.content)) {
     return `<div class="sys${enter}">${linkMentions(esc(systemBubbleText(m.content)))}</div>`;
   }
@@ -1577,6 +1591,7 @@ function renderSettings() {
     harness: "Harness",
     models: "Models",
     connectors: "Connectors",
+    skills: "Skills",
     permissions: "Permissions",
     agent: "Agent",
     approvals: "Approvals",
@@ -1769,6 +1784,10 @@ function renderSettings() {
     body.innerHTML = `<p class="set-caption">Loading MCP servers…</p>`;
     void renderMcpPane(body);
   }
+  if (setPane === "skills") {
+    body.innerHTML = `<p class="set-caption">Loading skills…</p>`;
+    void renderSkillsPane(body);
+  }
   if (setPane === "permissions") {
     body.innerHTML = `
       <div class="field">
@@ -1838,6 +1857,11 @@ function renderSettings() {
         <div class="hint">Every routine run (schedule, webhook, or typed /name) is recorded; the last 20 per routine are kept. A webhook POST with the routine's token runs it right away — the body text is appended to its prompt.</div>
         <div id="routineRunsBox" style="margin-top:8px"><div class="hint">Loading…</div></div>
       </div>
+      <div class="field">
+        <label>Import memory from another assistant</label>
+        <div class="hint">Paste a memory export from ChatGPT, Claude or another assistant (one fact per line). New lines are appended to the chosen Bot's memory under a dated heading; lines it already has are skipped.</div>
+        <div id="memImportBox" style="margin-top:8px"></div>
+      </div>
     `;
     bindFields({ "f-tz": "timezone" });
     bindSeg("scheduler", "scheduler");
@@ -1868,6 +1892,7 @@ function renderSettings() {
     $("clearRoster")?.addEventListener("click", () => void clearRosterAction());
     $("resetRoster")?.addEventListener("click", () => void resetRosterAction());
     if ($("routineRunsBox")) void renderRoutineRunsBox($("routineRunsBox"));
+    if ($("memImportBox")) renderMemImportBox($("memImportBox"));
   }
   if (setPane === "approvals") {
     body.innerHTML = `
@@ -1927,6 +1952,128 @@ function renderSettings() {
       });
     });
   }
+}
+
+async function renderSkillsPane(body) {
+  let data;
+  try {
+    data = await api("/api/skills");
+  } catch (err) {
+    body.innerHTML = `<p class="set-caption">Could not load skills: ${esc(err.message)}</p>`;
+    return;
+  }
+  if (setPane !== "skills") return;
+  skillsCache = data.skills || [];
+  const rows = skillsCache
+    .map(
+      (s) => `<div class="approval-row" style="align-items:flex-start">
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:600">/${esc(s.id)} <span style="color:var(--muted);font-weight:400">${esc(s.name)}</span></div>
+          <div class="hint">${esc(s.description || "No description")}</div>
+        </div>
+        <span style="display:flex;gap:6px">
+          <button class="btn ghost" data-skill-edit="${esc(s.id)}">Edit</button>
+          <button class="btn ghost" data-skill-del="${esc(s.id)}">Delete</button>
+        </span>
+      </div>`,
+    )
+    .join("");
+  body.innerHTML = `
+    <div class="field">
+      <label>Shared skills</label>
+      <div class="hint">Skills are reusable instruction sets stored as markdown on this machine and shared by every Bot. Type / and the skill id in chat to run one, or let a Bot load one itself with skill_read when a task matches its description.</div>
+      <div style="margin-top:8px">${rows || `<div class="hint">No skills yet — add the first one below.</div>`}</div>
+    </div>
+    <div class="field">
+      <label id="skillFormTitle">Add a skill</label>
+      <input id="sk-name" placeholder="Name, e.g. Deep research" style="margin-bottom:6px" />
+      <input id="sk-id" placeholder="Id (optional, from the name)" style="margin-bottom:6px" />
+      <input id="sk-desc" placeholder="One-line description — this is how Bots decide to use it" style="margin-bottom:6px" />
+      <textarea id="sk-body" rows="8" placeholder="The instructions, in markdown: when to use, steps, decision rules, output format…"></textarea>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button class="btn" id="sk-save">Save skill</button>
+        <button class="btn ghost" id="sk-clear">Clear form</button>
+      </div>
+    </div>`;
+  body.querySelectorAll("[data-skill-edit]").forEach((btn) =>
+    btn.addEventListener("click", () => {
+      const s = skillsCache.find((x) => x.id === btn.dataset.skillEdit);
+      if (!s) return;
+      $("sk-name").value = s.name;
+      $("sk-id").value = s.id;
+      $("sk-desc").value = s.description || "";
+      $("sk-body").value = s.body || "";
+      $("skillFormTitle").textContent = `Edit /${s.id}`;
+      $("sk-body").focus();
+    }),
+  );
+  body.querySelectorAll("[data-skill-del]").forEach((btn) =>
+    btn.addEventListener("click", async () => {
+      try {
+        await api(`/api/skills/${encodeURIComponent(btn.dataset.skillDel)}`, { method: "DELETE" });
+        toast("Skill deleted");
+        void renderSkillsPane(body);
+      } catch (err) {
+        toast(err.message);
+      }
+    }),
+  );
+  $("sk-clear")?.addEventListener("click", () => {
+    ["sk-name", "sk-id", "sk-desc", "sk-body"].forEach((id) => ($(id).value = ""));
+    $("skillFormTitle").textContent = "Add a skill";
+  });
+  $("sk-save")?.addEventListener("click", async () => {
+    const name = $("sk-name").value.trim();
+    if (!name) return toast("Give the skill a name");
+    try {
+      await api("/api/skills", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: $("sk-id").value.trim() || undefined,
+          name,
+          description: $("sk-desc").value.trim(),
+          body: $("sk-body").value,
+        }),
+      });
+      toast("Skill saved");
+      void renderSkillsPane(body);
+    } catch (err) {
+      toast(err.message);
+    }
+  });
+}
+
+function renderMemImportBox(box) {
+  const targets = bots.filter((b) => b.kind !== "group");
+  if (!targets.length) {
+    box.innerHTML = `<div class="hint">No Bots to import into.</div>`;
+    return;
+  }
+  box.innerHTML = `
+    <select id="mi-bot" style="margin-bottom:6px">${targets.map((b) => `<option value="${esc(b.id)}">${esc(b.name)}</option>`).join("")}</select>
+    <textarea id="mi-text" rows="6" placeholder="Paste the exported memory here, one fact per line…"></textarea>
+    <div style="display:flex;gap:8px;align-items:center;margin-top:8px">
+      <button class="btn" id="mi-run">Import into memory</button>
+      <span class="hint" id="mi-result"></span>
+    </div>`;
+  if (selected && targets.some((b) => b.id === selected)) $("mi-bot").value = selected;
+  $("mi-run")?.addEventListener("click", async () => {
+    const text = $("mi-text").value;
+    if (!text.trim()) return toast("Paste something first");
+    const botId = $("mi-bot").value;
+    try {
+      const data = await api(`/api/bots/${encodeURIComponent(botId)}/memory/import`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text }),
+      });
+      $("mi-result").textContent = `Added ${data.added} new, skipped ${data.skipped} already known.`;
+      if (data.added > 0) $("mi-text").value = "";
+    } catch (err) {
+      toast(err.message);
+    }
+  });
 }
 
 async function renderMcpPane(body) {
@@ -2372,13 +2519,24 @@ function resolveRoutineClient(bot, text) {
       r.name.toLowerCase() === key ||
       r.name.toLowerCase().replace(/\s+/g, "-") === key,
   );
-  if (!routine) return { content: text, kind: "text" };
   const tail = (m[2] || "").trim();
-  return {
-    content: tail ? `${routine.prompt}\n\n${tail}` : routine.prompt,
-    kind: "routine",
-    routineName: routine.name,
-  };
+  if (routine) {
+    return {
+      content: tail ? `${routine.prompt}\n\n${tail}` : routine.prompt,
+      kind: "routine",
+      routineName: routine.name,
+    };
+  }
+  const skill = skillsCache.find((s) => s.id.toLowerCase() === key || s.name.toLowerCase() === key);
+  if (skill) {
+    const header = `[Skill: ${skill.name}] Follow these instructions for this task.`;
+    return {
+      content: tail ? `${header}\n\n${skill.body}\n\n${tail}` : `${header}\n\n${skill.body}`,
+      kind: "skill",
+      skillName: skill.id,
+    };
+  }
+  return { content: text, kind: "text" };
 }
 
 async function sendMessage(text) {
@@ -2394,6 +2552,7 @@ async function sendMessage(text) {
     createdAt: new Date().toISOString(),
     kind: userLine.kind,
     routineName: userLine.routineName,
+    skillName: userLine.skillName,
   });
   bot.status = "thinking";
   bot.action = "Thinking";
@@ -2795,7 +2954,13 @@ function bindUi() {
 
   function showSkillPicker(query) {
     const q = query.toLowerCase();
-    pickerItems = (currentBot()?.routines || []).filter((r) => !q || r.name.toLowerCase().includes(q));
+    const routineItems = (currentBot()?.routines || [])
+      .filter((r) => !q || r.name.toLowerCase().includes(q))
+      .map((r) => ({ insert: r.name, label: `/${r.name}`, tag: "routine" }));
+    const skillItems = skillsCache
+      .filter((s) => !q || s.id.toLowerCase().includes(q) || s.name.toLowerCase().includes(q))
+      .map((s) => ({ insert: s.id, label: `/${s.id}`, tag: "skill" }));
+    pickerItems = [...routineItems, ...skillItems];
     if (!pickerItems.length) {
       hidePicker();
       return;
@@ -2803,8 +2968,8 @@ function bindUi() {
     pickerIndex = Math.min(pickerIndex, pickerItems.length - 1);
     picker.innerHTML = pickerItems
       .map(
-        (r, i) =>
-          `<button type="button" data-name="${esc(r.name)}" data-skill="1" class="${i === pickerIndex ? "active" : ""}"><span class="who">/${esc(r.name)}</span></button>`,
+        (it, i) =>
+          `<button type="button" data-name="${esc(it.insert)}" data-skill="1" class="${i === pickerIndex ? "active" : ""}"><span class="who">${esc(it.label)}</span><span class="job">${esc(it.tag)}</span></button>`,
       )
       .join("");
     picker.classList.add("show");
@@ -2978,6 +3143,7 @@ async function boot() {
   } catch {
     harnesses = [];
   }
+  await refreshSkills();
   await loadRoster();
   await loadMessages();
   if (notificationsOn() && notificationPermission() === "default" && notificationSupported()) {
@@ -2987,5 +3153,64 @@ async function boot() {
     }, 1200);
   }
 }
+
+// ---- Voice dictation (Web Speech API) ----
+// The mic button only appears where the browser provides speech
+// recognition (Chrome on desktop/Android). In shells without it the
+// button stays hidden and typing is the only input — no dead controls.
+(function initDictation() {
+  const btn = $("micBtn");
+  const input = $("input");
+  if (!btn || !input) return;
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) return;
+  btn.hidden = false;
+  let rec = null;
+  let base = "";
+  btn.addEventListener("click", () => {
+    if (rec) {
+      rec.stop();
+      return;
+    }
+    rec = new SR();
+    rec.lang = navigator.language || "en-US";
+    rec.interimResults = true;
+    rec.continuous = false;
+    base = input.value ? input.value.replace(/\s*$/, "") + " " : "";
+    rec.onresult = (e) => {
+      let finals = "";
+      let interim = "";
+      for (const result of e.results) {
+        if (result.isFinal) finals += result[0].transcript;
+        else interim += result[0].transcript;
+      }
+      if (finals) base += finals.replace(/^\s+/, " ").replace(/\s*$/, " ") || "";
+      input.value = base + interim;
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    };
+    rec.onerror = (e) => {
+      if (e.error === "not-allowed" || e.error === "service-not-allowed") {
+        toast("Microphone access was blocked — allow it to dictate");
+      } else if (e.error !== "aborted" && e.error !== "no-speech") {
+        toast(`Dictation error: ${e.error}`);
+      }
+    };
+    rec.onend = () => {
+      rec = null;
+      btn.classList.remove("recording");
+      btn.title = "Dictate";
+      input.value = input.value.replace(/\s+$/, "");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      input.focus();
+    };
+    try {
+      rec.start();
+      btn.classList.add("recording");
+      btn.title = "Listening… tap to stop";
+    } catch {
+      rec = null;
+    }
+  });
+})();
 
 boot().catch((err) => toast(err.message));

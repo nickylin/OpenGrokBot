@@ -50,12 +50,12 @@ pnpm install
 pnpm build:dmg
 ```
 
-产物在 `release/`（例如 `release/OpenGrokBot-0.4.0.dmg`、`release/OpenGrokBot-0.4.0-mac.zip`，以及 `release/mac/OpenGrokBot.app`）。
+产物在 `release/`（例如 `release/OpenGrokBot-0.5.0.dmg`、`release/OpenGrokBot-0.5.0-mac.zip`，以及 `release/mac/OpenGrokBot.app`）。
 
 若 `electron-builder` 在 DMG 步骤卡住，app 和 zip 仍然可用。可手动打 DMG：
 
 ```bash
-hdiutil create -volname "OpenGrokBot" -srcfolder release/mac/OpenGrokBot.app -ov -format UDZO release/OpenGrokBot-0.4.0.dmg
+hdiutil create -volname "OpenGrokBot" -srcfolder release/mac/OpenGrokBot.app -ov -format UDZO release/OpenGrokBot-0.5.0.dmg
 ```
 
 **安装未签名包：** macOS 可能拦截首次打开。请右键 **OpenGrokBot → 打开**，或执行：
@@ -72,7 +72,7 @@ pnpm dev:desktop
 
 会先跑 TypeScript 开发服务，等 `/api/health` 就绪后再打开 Electron 窗口。
 
-**v0.4.0 限制：** 系统 `PATH` 里要有 Node 20+（应用会调用本机 `node` 跑服务）。无代码签名或自动更新；已有菜单栏托盘，并可选用 macOS 登录项在登录后后台启动（托盘常驻）；关窗不会退出进程，需从托盘菜单 **Quit** 才完全退出。完全退出后定时 routine 不会跑（未安装独立 launchd 代理）。CLI 执行器（`codex`、`cursor`、`dsh`）仍需在本机单独安装，且 MCP 工具、`${secret:}` 替换和表单卡目前只接了 HTTP 执行器（OpenAI 兼容 / Ollama），CLI 执行器没有。用户数据仍在 `~/.opengrokbot/`。
+**v0.5.0 限制：** 系统 `PATH` 里要有 Node 20+（应用会调用本机 `node` 跑服务）。无代码签名或自动更新；已有菜单栏托盘，并可选用 macOS 登录项在登录后后台启动（托盘常驻）；关窗不会退出进程，需从托盘菜单 **Quit** 才完全退出。完全退出后定时 routine 不会跑（未安装独立 launchd 代理）。CLI 执行器（`codex`、`cursor`、`dsh`）仍需在本机单独安装，且 MCP 工具、`skill_read`、`${secret:}` 替换和表单卡目前只接了 HTTP 执行器（OpenAI 兼容 / Ollama），CLI 执行器没有（但打 `/技能id` 仍然有效——指令就写在提示词里）。语音听写需要支持 Web Speech API 的浏览器（Chrome）；不支持的环境里麦克风按钮会自动隐藏。用户数据仍在 `~/.opengrokbot/`。
 
 ### 后台通知
 
@@ -98,17 +98,17 @@ pnpm dev:desktop
 | 上手 | 发一条消息，不是去搭工作流编辑器 | 一样 |
 | 价格 | Cursor / SuperGrok 订阅 | 免费。MIT |
 
-## v0.4 现在有什么
+## v0.5 现在有什么
 
 这是能跑起来的本机应用，不是只有一篇 README。
 
-**v0.4.0 新增** — Bot 终于能伸到聊天之外：
+**v0.5.0 新增** — Bot 有了全员共享的技能手册，你旧助手的记忆也有了入口：
 
-- **MCP 连接器（stdio）** — 在 `~/.opengrokbot/mcp.json` 或 Settings → Connectors 里声明服务器，它们的工具会以 `mcp_<服务器>_<工具>` 的名字出现在每一轮对话里。现成的 MCP server（文件系统、GitHub、Gmail 等）现在都是连接器。
-- **密钥从只存变成能用** — Shell 命令和 MCP 服务器的 env 里可以写 `${secret:name}`，执行那一刻在本机替换成真值；所有工具结果都会过一遍回显扫描，被回显出来的密钥值会被打码成 `•••`，永远不会原文回到模型面前。
-- **Routine 的 Webhook 触发 + 运行历史** — 每条 routine 可以领一个 webhook token（Settings → Agent），POST 一下立刻触发，正文 text 会追加到它的提示词后面。每次运行（定时、Webhook、手动打 /名字）都有记录，每条 routine 保留最近 20 次。
+- **Skills 技能库** — 可复用的指令集以 markdown 存在 `~/.opengrokbot/skills/`（Settings → Skills 管理，自带两个示例）。在聊天里打 `/deep-research 你的任务` 直接跑一条，或者让 Bot 遇到匹配的任务时自己用 `skill_read` 把技能加载进来。
+- **记忆导入** — 把 ChatGPT、Claude 或其他助手导出的记忆粘进来（Settings → Agent），新事实会落到所选 Bot 的 `MEMORY.md` 里、挂在带日期的标题下；它已经知道的逐行跳过，重复导入等于没导。
+- **语音听写** — 输入框旁有麦克风按钮（Web Speech API），语音转成文字先进输入框。它只在支持的浏览器里出现。
 
-v0.3.0 加的是交互式表单卡 + 只写密钥字段；v0.2 加的是桌面应用。完整历史：[CHANGELOG.md](CHANGELOG.md)。
+v0.4.0 加的是 MCP 连接器、`${secret:}` 替换加输出打码、routine 的 Webhook 触发；v0.3.0 加的是交互式表单卡 + 只写密钥字段；v0.2 加的是桌面应用。完整历史：[CHANGELOG.md](CHANGELOG.md)。
 
 **这个版本有**
 
@@ -129,6 +129,9 @@ v0.3.0 加的是交互式表单卡 + 只写密钥字段；v0.2 加的是桌面�
 - **`/routine` 选择器** — 输入框里打 `/` 可触发 Bot 的 routine 提示词
 - **定时 Routine** — 进程内调度器在应用打开时到点触发启用的 routine（Settings → Agent → Host scheduler）
 - **Webhook 触发 Routine** — `POST /api/hooks/routines/<botId>/<routineId>` 带上该 routine 的 `x-webhook-token` 头立刻触发；`{ "text": "…" }` 会追加到提示词。所有触发方式的运行记录都在 `~/.opengrokbot/routine-runs.json`（每条保留最近 20 次，Settings → Agent 可看）
+- **Skills 技能库** — `~/.opengrokbot/skills/` 里的 markdown 技能（Settings → Skills 管理），全体 Bot 共享；`/` 选择器里 routine 和技能列在一起。Bot 的系统提示里带有技能描述列表，任务匹配时能自己用 `skill_read` 工具加载；打 `/<技能id> 任务` 则直接把技能预载成本轮指令
+- **记忆导入** — Settings → Agent：把其他助手的记忆导出粘进任意 Bot 的 `MEMORY.md`，逐行和已有记忆去重（`POST /api/bots/:id/memory/import`）
+- **语音听写** — 支持 Web Speech API 的浏览器（Chrome）里输入框旁会出现麦克风按钮；转写先进输入框等你确认，不会自动发送
 - **后台通知** — 浏览器或 macOS 在回复完成、需要审批或 routine 触发时提醒
 - Settings → Agent：清空花名册，或重置为 `data/bots/` 里的 starter 配置
 - 右边「电脑」栏是状态预览（干活时图标变紫、壁纸跟时间走），不是一台真在跑的虚拟机
@@ -138,14 +141,14 @@ v0.3.0 加的是交互式表单卡 + 只写密钥字段；v0.2 加的是桌面�
 - 真浏览器 / computer-use
 - 完全退出后的后台定时（登录项只会启动应用；routine 仍需应用进程在跑）
 - MCP 的 HTTP/SSE 传输，以及 CLI 执行器下的 MCP（现在只有 stdio + HTTP 执行器）
-- 独立的 Skills 技能库（技能目前挂在 routine 上）
-- 语音输入、聊天附件
+- 聊天附件
+- Teach a task 录制学技能（技能目前是手写 markdown）
 - Auto Review 模型
 - 合上笔记本还继续干活
 
 下面那份官方清单是方向，不是「今天每一项都接好了」。
 
-<img src="./docs/map.svg" alt="v0.4 产品图：花名册、聊天、记忆和文件、shell 审批" width="640" />
+<img src="./docs/map.svg" alt="v0.5 产品图：花名册、聊天、记忆和文件、shell 审批" width="640" />
 
 ## 界面与在场感
 
@@ -229,6 +232,7 @@ OpenGrokBot 跑在你这台机器上。盖子一合，团队就停。
 | `~/.opengrokbot/secrets.json` | 表单卡收集的密钥（权限 0600，接口只写不读明文） |
 | `~/.opengrokbot/mcp.json` | MCP 服务器声明（命令、参数、env；env 可用 `${secret:name}`） |
 | `~/.opengrokbot/routine-runs.json` | Routine 运行历史（每条保留最近 20 次） |
+| `~/.opengrokbot/skills/` | 技能库——一个技能一个 markdown 文件，YAML frontmatter |
 | `~/.opengrokbot/bots/` | 花名册 YAML（首次从 `data/bots/` 拷贝） |
 | `~/.opengrokbot/transcripts/` | 聊天记录 |
 | `~/.opengrokbot/memory/` | 每个 Bot 一份 `MEMORY.md` |

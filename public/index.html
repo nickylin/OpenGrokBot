@@ -747,6 +747,7 @@
       transition: background var(--dur) var(--ease-out-quint), color var(--dur) var(--ease-out-quint), transform var(--dur-fast) var(--ease-out-quint), filter var(--dur-fast) var(--ease-out-quint);
     }
     .send svg { width: 16px; height: 16px; display: block; }
+    #micBtn.recording { background: #c0392b; color: #fff; }
     .send.ready { background: var(--inverse); color: var(--on-inverse); }
     .send:disabled { cursor: default; }
     .send.ready:hover { filter: brightness(0.94); }
@@ -1430,6 +1431,11 @@
                   </div>
                 </div>
                 <input id="input" placeholder="Message Sales Outbound" autocomplete="off" enterkeyhint="send" />
+                <button class="send" type="button" title="Dictate" id="micBtn" aria-label="Dictate" hidden>
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path fill="currentColor" d="M12 15a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v6a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-2.08A7 7 0 0 0 19 12h-2Z"/>
+                  </svg>
+                </button>
                 <button class="send" type="submit" title="Send" id="sendBtn" aria-label="Send" disabled>
                   <svg viewBox="0 0 24 24" aria-hidden="true">
                     <path fill="currentColor" d="M12 4.2 5.4 10.8a1.15 1.15 0 0 0 1.63 1.63L10.85 8.6V19a1.15 1.15 0 0 0 2.3 0V8.6l3.82 3.83a1.15 1.15 0 1 0 1.63-1.63Z"/>
@@ -1521,6 +1527,7 @@
               <button class="active" data-pane="harness">Harness</button>
               <button data-pane="models">Models</button>
               <button data-pane="connectors">Connectors</button>
+            <button data-pane="skills">Skills</button>
               <button data-pane="permissions">Permissions</button>
               <button data-pane="agent">Agent</button>
               <button data-pane="approvals">Approvals</button>
@@ -1549,7 +1556,7 @@
             </button>
             <button class="item" type="button" data-acct="appearance" role="menuitem">Appearance</button>
             <button class="item" type="button" data-acct="about" role="menuitem">About</button>
-            <div class="acct-pop-foot">OpenGrokBot 0.4.0</div>
+            <div class="acct-pop-foot">OpenGrokBot 0.5.0</div>
           </div>
           <div class="acct-pop-about" id="acctPopAbout" hidden>
             <button class="item" type="button" data-acct="back">← Account</button>
@@ -1562,6 +1569,6 @@
     </div>
   </div>
 
-<script src="/app.js?v=ui36"></script>
+<script src="/app.js?v=ui37"></script>
 </body>
 </html>

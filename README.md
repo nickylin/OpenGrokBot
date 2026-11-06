@@ -50,12 +50,12 @@ pnpm install
 pnpm build:dmg
 ```
 
-Artifacts land in `release/` (for example `release/OpenGrokBot-0.4.0.dmg`, `release/OpenGrokBot-0.4.0-mac.zip`, and `release/mac/OpenGrokBot.app`).
+Artifacts land in `release/` (for example `release/OpenGrokBot-0.5.0.dmg`, `release/OpenGrokBot-0.5.0-mac.zip`, and `release/mac/OpenGrokBot.app`).
 
 If `electron-builder` hangs on the DMG step, the app bundle and zip are still valid. Create a DMG manually:
 
 ```bash
-hdiutil create -volname "OpenGrokBot" -srcfolder release/mac/OpenGrokBot.app -ov -format UDZO release/OpenGrokBot-0.4.0.dmg
+hdiutil create -volname "OpenGrokBot" -srcfolder release/mac/OpenGrokBot.app -ov -format UDZO release/OpenGrokBot-0.5.0.dmg
 ```
 
 **Install an unsigned build:** macOS may block the first launch. Right-click **OpenGrokBot → Open**, or run:
@@ -72,7 +72,7 @@ pnpm dev:desktop
 
 This runs the TypeScript dev server and opens Electron once `/api/health` responds.
 
-**Limitations (v0.4.0):** requires Node 20+ on `PATH` (the app spawns your system `node` to run the server). No code signing or auto-update. Menu-bar tray and optional **login at startup** (macOS Login Item, background tray) are included: closing the window keeps the server running until you quit from the tray. After a full **Quit**, scheduled routines do not run until you open the app again (no separate launchd agent). CLI harnesses (`codex`, `cursor`, `dsh`) still need separate install on the machine, and MCP tools, `${secret:}` substitution, and form cards are only wired into the HTTP harnesses (OpenAI-compatible / Ollama), not the CLI ones. User data stays in `~/.opengrokbot/` either way.
+**Limitations (v0.5.0):** requires Node 20+ on `PATH` (the app spawns your system `node` to run the server). No code signing or auto-update. Menu-bar tray and optional **login at startup** (macOS Login Item, background tray) are included: closing the window keeps the server running until you quit from the tray. After a full **Quit**, scheduled routines do not run until you open the app again (no separate launchd agent). CLI harnesses (`codex`, `cursor`, `dsh`) still need separate install on the machine, and MCP tools, `skill_read`, `${secret:}` substitution, and form cards are only wired into the HTTP harnesses (OpenAI-compatible / Ollama), not the CLI ones (typing `/skill-id` still works there — the instructions ride in the prompt). Voice dictation needs a browser with the Web Speech API (Chrome); the mic button hides itself where it is unavailable. User data stays in `~/.opengrokbot/` either way.
 
 ### Background notifications
 
@@ -98,17 +98,17 @@ Official Grok Bot ([docs](https://docs.x.ai/grok-bot/overview)): named teammates
 | Setup | A message, not a workflow builder | Same |
 | Price | Cursor / SuperGrok plan | Free. MIT |
 
-## What v0.4 ships
+## What v0.5 ships
 
 This is a working local app, not a README stub.
 
-**New in v0.4.0** — Bots can finally reach outside the chat:
+**New in v0.5.0** — Bots get a shared playbook and a way in for your old assistant's memory:
 
-- **MCP connectors (stdio)** — declare servers in `~/.opengrokbot/mcp.json` or Settings → Connectors; their tools show up in every Bot turn as `mcp_<server>_<tool>`. Any MCP server that exists today (filesystem, GitHub, Gmail, …) is now a connector.
-- **Secrets that get used, not just stored** — write `${secret:name}` in a shell command or an MCP server's env; the value is substituted on this machine at execution time, and every tool result is scanned so an echoed value comes back masked (`•••`), never raw.
-- **Routine webhook triggers + run history** — each routine can get a webhook token (Settings → Agent); a POST fires it immediately, with the body text appended to its prompt. Every run — schedule, webhook, or typed `/name` — is recorded, last 20 per routine.
+- **Skills library** — reusable instruction sets as markdown in `~/.opengrokbot/skills/` (managed in Settings → Skills, two starters included). Type `/deep-research your task` to run one, or let a Bot pull one in itself with `skill_read` when a task matches its description.
+- **Memory import** — paste a memory export from ChatGPT, Claude, or another assistant (Settings → Agent); new facts land in the chosen Bot's `MEMORY.md` under a dated heading, lines it already has are skipped, so re-importing is a no-op.
+- **Voice dictation** — a mic button in the composer (Web Speech API) transcribes speech into the input box. It only appears in browsers that support it.
 
-v0.3.0 added interactive form cards + write-only secret fields; v0.2 added the desktop app. Full history: [CHANGELOG.md](CHANGELOG.md).
+v0.4.0 added MCP connectors, `${secret:}` substitution with output masking, and routine webhooks; v0.3.0 added form cards + write-only secrets; v0.2 added the desktop app. Full history: [CHANGELOG.md](CHANGELOG.md).
 
 **In this release**
 
@@ -129,6 +129,9 @@ v0.3.0 added interactive form cards + write-only secret fields; v0.2 added the d
 - **`/routine` picker** — type `/` in the composer to fire a Bot's routine prompt
 - **Scheduled routines** — in-process scheduler fires enabled routines while the app is open (Settings → Agent → Host scheduler)
 - **Webhook routine triggers** — `POST /api/hooks/routines/<botId>/<routineId>` with the routine's `x-webhook-token` header fires it now; `{ "text": "…" }` is appended to the prompt. Runs from every trigger are kept in `~/.opengrokbot/routine-runs.json` (last 20 per routine, shown in Settings → Agent)
+- **Skills library** — markdown skills in `~/.opengrokbot/skills/` (Settings → Skills), shared by all Bots; `/` picker lists routines and skills together. Bots see skill descriptions in their system prompt and can load one mid-task with the `skill_read` tool; typing `/<skill-id> task` preloads it as the turn's instructions
+- **Memory import** — Settings → Agent: paste another assistant's memory export into any Bot's `MEMORY.md`, deduplicated line-by-line against what it already knows (`POST /api/bots/:id/memory/import`)
+- **Voice dictation** — mic button in the composer where the Web Speech API exists (Chrome); speech lands in the input box for review before sending, never auto-sent
 - **Background notifications** — browser or macOS alerts when a reply finishes, approval is needed, or a routine starts
 - Settings → Agent: clear roster or reset to the starter bots in `data/bots/`
 - Computer pane as a status preview (purple icon while active, time-of-day wallpaper), not a live VM
@@ -138,14 +141,14 @@ v0.3.0 added interactive form cards + write-only secret fields; v0.2 added the d
 - Real browser / computer-use
 - Background scheduler after full Quit (login starts the app; routines still need the app process running)
 - MCP over HTTP/SSE transports and MCP for CLI harnesses (stdio + HTTP harnesses only today)
-- A standalone Skills library (skills currently ride on routines)
-- Voice input, chat attachments
+- Chat attachments
+- Teach-a-task recording (skills are hand-written markdown today)
 - Auto-review model
 - Work while the laptop sleeps
 
 The rest of the official list below is the north star, not a claim that every item is wired today.
 
-<img src="./docs/map.svg" alt="v0.4 map: roster, chat, memory and files, shell approvals" width="640" />
+<img src="./docs/map.svg" alt="v0.5 map: roster, chat, memory and files, shell approvals" width="640" />
 
 ## UI and presence
 
@@ -227,6 +230,7 @@ If you need 24/7, keep a small machine awake — or stay on official Grok Bot.
 | `~/.opengrokbot/secrets.json` | Secrets collected via form cards (mode 0600, write-only from the API) |
 | `~/.opengrokbot/mcp.json` | MCP server declarations (command, args, env — env may use `${secret:name}`) |
 | `~/.opengrokbot/routine-runs.json` | Routine run history (last 20 per routine) |
+| `~/.opengrokbot/skills/` | Skills library — one markdown file per skill, YAML frontmatter |
 | `~/.opengrokbot/bots/` | Roster YAML (seeded from `data/bots/` on first run) |
 | `~/.opengrokbot/transcripts/` | Chat history |
 | `~/.opengrokbot/memory/` | Per-Bot `MEMORY.md` |

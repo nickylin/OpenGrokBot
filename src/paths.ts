@@ -11,6 +11,7 @@ function resolveRoot(): string {
 export const ROOT = resolveRoot();
 export const PUBLIC_DIR = join(ROOT, "public");
 export const SEED_BOTS_DIR = join(ROOT, "data", "bots");
+export const SEED_SKILLS_DIR = join(ROOT, "data", "skills");
 
 export function homeDir(): string {
   return process.env.OPENGROKBOT_HOME ?? join(homedir(), ".opengrokbot");
@@ -28,5 +29,6 @@ export async function ensureHome(): Promise<string> {
   await mkdir(join(home, "transcripts"), { recursive: true });
   await mkdir(join(home, "memory"), { recursive: true });
   await mkdir(join(home, "workspace"), { recursive: true });
+  await mkdir(join(home, "skills"), { recursive: true });
   return home;
 }
