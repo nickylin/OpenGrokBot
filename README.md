@@ -50,12 +50,12 @@ pnpm install
 pnpm build:dmg
 ```
 
-Artifacts land in `release/` (for example `release/OpenGrokBot-0.6.0.dmg`, `release/OpenGrokBot-0.6.0-mac.zip`, and `release/mac/OpenGrokBot.app`).
+Artifacts land in `release/` (for example `release/OpenGrokBot-0.6.1.dmg`, `release/OpenGrokBot-0.6.1-mac.zip`, and `release/mac/OpenGrokBot.app`).
 
 If `electron-builder` hangs on the DMG step, the app bundle and zip are still valid. Create a DMG manually:
 
 ```bash
-hdiutil create -volname "OpenGrokBot" -srcfolder release/mac/OpenGrokBot.app -ov -format UDZO release/OpenGrokBot-0.6.0.dmg
+hdiutil create -volname "OpenGrokBot" -srcfolder release/mac/OpenGrokBot.app -ov -format UDZO release/OpenGrokBot-0.6.1.dmg
 ```
 
 **Install an unsigned build:** macOS may block the first launch. Right-click **OpenGrokBot → Open**, or run:
@@ -72,7 +72,7 @@ pnpm dev:desktop
 
 This runs the TypeScript dev server and opens Electron once `/api/health` responds.
 
-**Limitations (v0.6.0):** requires Node 20+ on `PATH` (the app spawns your system `node` to run the server). No code signing or auto-update. Menu-bar tray and optional **login at startup** (macOS Login Item, background tray) are included: closing the window keeps the server running until you quit from the tray. After a full **Quit**, scheduled routines do not run until you open the app again (no separate launchd agent). CLI harnesses (`codex`, `cursor`, `dsh`) still need separate install on the machine, and MCP tools, browser tools, `skill_read`, `${secret:}` substitution, and form cards are only wired into the HTTP harnesses (OpenAI-compatible / Ollama), not the CLI ones (typing `/skill-id` still works there — the instructions ride in the prompt). Voice dictation needs a browser with the Web Speech API (Chrome); the mic button hides itself where it is unavailable. The ego lite adapter is written against Citro Labs' public JS SDK docs and has not been verified against a live ego install yet; the agent-browser adapter and the Playwright MCP preset are live-tested. User data stays in `~/.opengrokbot/` either way.
+**Limitations (v0.6.1):** requires Node 20+ on `PATH` (the app spawns your system `node` to run the server). No code signing or auto-update. Menu-bar tray and optional **login at startup** (macOS Login Item, background tray) are included: closing the window keeps the server running until you quit from the tray. After a full **Quit**, scheduled routines do not run until you open the app again (no separate launchd agent). CLI harnesses (`codex`, `cursor`, `dsh`) still need separate install on the machine, and MCP tools, browser tools, `skill_read`, `${secret:}` substitution, and form cards are only wired into the HTTP harnesses (OpenAI-compatible / Ollama), not the CLI ones (typing `/skill-id` still works there — the instructions ride in the prompt). Voice dictation needs a browser with the Web Speech API (Chrome); the mic button hides itself where it is unavailable. All three browser paths are live-tested: the agent-browser adapter and the Playwright MCP preset in a Linux environment, and the ego lite adapter against a real ego install on macOS (v0.6.1; ego selectors are Playwright-style). User data stays in `~/.opengrokbot/` either way.
 
 ### Background notifications
 

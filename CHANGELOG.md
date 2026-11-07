@@ -1,5 +1,29 @@
 # Changelog
 
+## v0.6.1 — 2026-11-07
+
+The ego lite adapter is now verified against a real ego install — and
+the docs-based first cut was wrong in three places, all fixed:
+
+- **Invocation**: `ego-browser nodejs <file>` parses the path as code
+  and dies with a regex SyntaxError; ego's runtime reads the script
+  from stdin. The adapter now feeds the generated script via a small
+  `sh -c` wrapper (`"$1" nodejs < "$2"`).
+- **Page handle**: `taskSpace()` returns a Space whose `page` is a
+  method that only refers to an *existing* managed page by label. The
+  adapter now reuses `space.pages()[0]` or creates one with
+  `space.newPage()` — the Space and its page persist across separate
+  ego processes, so multi-step flows keep their tab.
+- **API shape**: the Page object is Playwright-flavoured
+  (`goto / snapshot / click / fill / screenshot({ path })`), and
+  `page.snapshot()` returns a string. Scripts print it directly.
+- Live test on macOS (ego lite, Space "opengrokbot"): open
+  example.com → title + snapshot → click "Learn more" → landed on
+  iana.org → fill a form field on httpbin → value read back → PNG
+  screenshot written. All five `browser_*` actions confirmed.
+- Shell/tool execution timeout raised 20s → 60s: real page loads in a
+  linked browser routinely outlast 20s.
+
 ## v0.6.0 — 2026-11-07
 
 Bots can drive a real browser — via MCP presets for everyone, and via a

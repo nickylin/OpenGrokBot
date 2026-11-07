@@ -656,7 +656,9 @@ async function executeShell(command: string, args: string[], workspace: string):
   try {
     const { stdout, stderr } = await execFileAsync(command, args, {
       cwd,
-      timeout: 20_000,
+      // 60s: browser actions (page loads in a linked browser) routinely
+      // outlast the 20s that was plenty for plain shell commands.
+      timeout: 60_000,
       maxBuffer: 512_000,
     });
     return JSON.stringify({ stdout: stdout.slice(0, 8000), stderr: stderr.slice(0, 2000) });

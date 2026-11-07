@@ -50,12 +50,12 @@ pnpm install
 pnpm build:dmg
 ```
 
-产物在 `release/`（例如 `release/OpenGrokBot-0.6.0.dmg`、`release/OpenGrokBot-0.6.0-mac.zip`，以及 `release/mac/OpenGrokBot.app`）。
+产物在 `release/`（例如 `release/OpenGrokBot-0.6.1.dmg`、`release/OpenGrokBot-0.6.1-mac.zip`，以及 `release/mac/OpenGrokBot.app`）。
 
 若 `electron-builder` 在 DMG 步骤卡住，app 和 zip 仍然可用。可手动打 DMG：
 
 ```bash
-hdiutil create -volname "OpenGrokBot" -srcfolder release/mac/OpenGrokBot.app -ov -format UDZO release/OpenGrokBot-0.6.0.dmg
+hdiutil create -volname "OpenGrokBot" -srcfolder release/mac/OpenGrokBot.app -ov -format UDZO release/OpenGrokBot-0.6.1.dmg
 ```
 
 **安装未签名包：** macOS 可能拦截首次打开。请右键 **OpenGrokBot → 打开**，或执行：
@@ -72,7 +72,7 @@ pnpm dev:desktop
 
 会先跑 TypeScript 开发服务，等 `/api/health` 就绪后再打开 Electron 窗口。
 
-**v0.6.0 限制：** 系统 `PATH` 里要有 Node 20+（应用会调用本机 `node` 跑服务）。无代码签名或自动更新；已有菜单栏托盘，并可选用 macOS 登录项在登录后后台启动（托盘常驻）；关窗不会退出进程，需从托盘菜单 **Quit** 才完全退出。完全退出后定时 routine 不会跑（未安装独立 launchd 代理）。CLI 执行器（`codex`、`cursor`、`dsh`）仍需在本机单独安装，且 MCP 工具、浏览器工具、`skill_read`、`${secret:}` 替换和表单卡目前只接了 HTTP 执行器（OpenAI 兼容 / Ollama），CLI 执行器没有（但打 `/技能id` 仍然有效——指令就写在提示词里）。语音听写需要支持 Web Speech API 的浏览器（Chrome）；不支持的环境里麦克风按钮会自动隐藏。ego lite 适配器是按 Citro Labs 公开的 JS SDK 文档写的，还没有在真实 ego 安装上验证过；agent-browser 适配器和 Playwright MCP 预设都已真机实测。用户数据仍在 `~/.opengrokbot/`。
+**v0.6.1 限制：** 系统 `PATH` 里要有 Node 20+（应用会调用本机 `node` 跑服务）。无代码签名或自动更新；已有菜单栏托盘，并可选用 macOS 登录项在登录后后台启动（托盘常驻）；关窗不会退出进程，需从托盘菜单 **Quit** 才完全退出。完全退出后定时 routine 不会跑（未安装独立 launchd 代理）。CLI 执行器（`codex`、`cursor`、`dsh`）仍需在本机单独安装，且 MCP 工具、浏览器工具、`skill_read`、`${secret:}` 替换和表单卡目前只接了 HTTP 执行器（OpenAI 兼容 / Ollama），CLI 执行器没有（但打 `/技能id` 仍然有效——指令就写在提示词里）。语音听写需要支持 Web Speech API 的浏览器（Chrome）；不支持的环境里麦克风按钮会自动隐藏。三条浏览器路径都已实测：agent-browser 适配器和 Playwright MCP 预设在 Linux 环境，ego lite 适配器在 macOS 上的真实 ego 安装（v0.6.1；ego 的选择器是 Playwright 风格）。用户数据仍在 `~/.opengrokbot/`。
 
 ### 后台通知
 
