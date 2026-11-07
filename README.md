@@ -50,12 +50,12 @@ pnpm install
 pnpm build:dmg
 ```
 
-Artifacts land in `release/` (for example `release/OpenGrokBot-0.5.0.dmg`, `release/OpenGrokBot-0.5.0-mac.zip`, and `release/mac/OpenGrokBot.app`).
+Artifacts land in `release/` (for example `release/OpenGrokBot-0.6.0.dmg`, `release/OpenGrokBot-0.6.0-mac.zip`, and `release/mac/OpenGrokBot.app`).
 
 If `electron-builder` hangs on the DMG step, the app bundle and zip are still valid. Create a DMG manually:
 
 ```bash
-hdiutil create -volname "OpenGrokBot" -srcfolder release/mac/OpenGrokBot.app -ov -format UDZO release/OpenGrokBot-0.5.0.dmg
+hdiutil create -volname "OpenGrokBot" -srcfolder release/mac/OpenGrokBot.app -ov -format UDZO release/OpenGrokBot-0.6.0.dmg
 ```
 
 **Install an unsigned build:** macOS may block the first launch. Right-click **OpenGrokBot → Open**, or run:
@@ -72,7 +72,7 @@ pnpm dev:desktop
 
 This runs the TypeScript dev server and opens Electron once `/api/health` responds.
 
-**Limitations (v0.5.0):** requires Node 20+ on `PATH` (the app spawns your system `node` to run the server). No code signing or auto-update. Menu-bar tray and optional **login at startup** (macOS Login Item, background tray) are included: closing the window keeps the server running until you quit from the tray. After a full **Quit**, scheduled routines do not run until you open the app again (no separate launchd agent). CLI harnesses (`codex`, `cursor`, `dsh`) still need separate install on the machine, and MCP tools, `skill_read`, `${secret:}` substitution, and form cards are only wired into the HTTP harnesses (OpenAI-compatible / Ollama), not the CLI ones (typing `/skill-id` still works there — the instructions ride in the prompt). Voice dictation needs a browser with the Web Speech API (Chrome); the mic button hides itself where it is unavailable. User data stays in `~/.opengrokbot/` either way.
+**Limitations (v0.6.0):** requires Node 20+ on `PATH` (the app spawns your system `node` to run the server). No code signing or auto-update. Menu-bar tray and optional **login at startup** (macOS Login Item, background tray) are included: closing the window keeps the server running until you quit from the tray. After a full **Quit**, scheduled routines do not run until you open the app again (no separate launchd agent). CLI harnesses (`codex`, `cursor`, `dsh`) still need separate install on the machine, and MCP tools, browser tools, `skill_read`, `${secret:}` substitution, and form cards are only wired into the HTTP harnesses (OpenAI-compatible / Ollama), not the CLI ones (typing `/skill-id` still works there — the instructions ride in the prompt). Voice dictation needs a browser with the Web Speech API (Chrome); the mic button hides itself where it is unavailable. The ego lite adapter is written against Citro Labs' public JS SDK docs and has not been verified against a live ego install yet; the agent-browser adapter and the Playwright MCP preset are live-tested. User data stays in `~/.opengrokbot/` either way.
 
 ### Background notifications
 
@@ -98,17 +98,16 @@ Official Grok Bot ([docs](https://docs.x.ai/grok-bot/overview)): named teammates
 | Setup | A message, not a workflow builder | Same |
 | Price | Cursor / SuperGrok plan | Free. MIT |
 
-## What v0.5 ships
+## What v0.6 ships
 
 This is a working local app, not a README stub.
 
-**New in v0.5.0** — Bots get a shared playbook and a way in for your old assistant's memory:
+**New in v0.6.0** — Bots can drive a real browser, two ways, both opt-in:
 
-- **Skills library** — reusable instruction sets as markdown in `~/.opengrokbot/skills/` (managed in Settings → Skills, two starters included). Type `/deep-research your task` to run one, or let a Bot pull one in itself with `skill_read` when a task matches its description.
-- **Memory import** — paste a memory export from ChatGPT, Claude, or another assistant (Settings → Agent); new facts land in the chosen Bot's `MEMORY.md` under a dated heading, lines it already has are skipped, so re-importing is a no-op.
-- **Voice dictation** — a mic button in the composer (Web Speech API) transcribes speech into the input box. It only appears in browsers that support it.
+- **Built-in browser via MCP presets** — Settings → Browser adds Microsoft's Playwright MCP (its own profile folder, Chrome-for-Testing build — no system Chrome needed; the one-time browser download runs when you add it) or Google's Chrome DevTools MCP in one click. Bots drive them through the existing `mcp_` tools.
+- **Linked browser apps** — if you already run a browser agent CLI, link it (off by default, only ever enabled by you in Settings → Browser): the open-source **agent-browser** (Apache-2.0, Vercel Labs) or **ego lite** (Citro Labs; great logged-in Spaces, but the browser itself is closed-source — the consent text says so before you link). Bots get native `browser_open / browser_snapshot / browser_click / browser_fill / browser_screenshot` tools, gated by the same Ask / Auto / Allow-all modes as shell commands, and screenshots show up live in the Computer pane.
 
-v0.4.0 added MCP connectors, `${secret:}` substitution with output masking, and routine webhooks; v0.3.0 added form cards + write-only secrets; v0.2 added the desktop app. Full history: [CHANGELOG.md](CHANGELOG.md).
+v0.5.0 added the Skills library, memory import, and voice dictation; v0.4.0 added MCP connectors, `${secret:}` substitution with output masking, and routine webhooks; v0.3.0 added form cards + write-only secrets; v0.2 added the desktop app. Full history: [CHANGELOG.md](CHANGELOG.md).
 
 **In this release**
 
@@ -132,13 +131,15 @@ v0.4.0 added MCP connectors, `${secret:}` substitution with output masking, and 
 - **Skills library** — markdown skills in `~/.opengrokbot/skills/` (Settings → Skills), shared by all Bots; `/` picker lists routines and skills together. Bots see skill descriptions in their system prompt and can load one mid-task with the `skill_read` tool; typing `/<skill-id> task` preloads it as the turn's instructions
 - **Memory import** — Settings → Agent: paste another assistant's memory export into any Bot's `MEMORY.md`, deduplicated line-by-line against what it already knows (`POST /api/bots/:id/memory/import`)
 - **Voice dictation** — mic button in the composer where the Web Speech API exists (Chrome); speech lands in the input box for review before sending, never auto-sent
+- **Browser control** — Settings → Browser: one-click MCP presets (Playwright MCP with its own `~/.opengrokbot/browser-profile`, Chrome DevTools MCP) plus optional linking of a local agent-browser or ego lite install. Linked browsers expose native `browser_*` tools behind the localExec approval gate; their screenshots render in the Computer pane (`~/.opengrokbot/browser/last-screenshot.png`)
 - **Background notifications** — browser or macOS alerts when a reply finishes, approval is needed, or a routine starts
 - Settings → Agent: clear roster or reset to the starter bots in `data/bots/`
 - Computer pane as a status preview (purple icon while active, time-of-day wallpaper), not a live VM
 
 **Not yet**
 
-- Real browser / computer-use
+- Vision/coordinate computer-use and a live video view of the browser (today: accessibility snapshots + still screenshots)
+- General desktop computer-use beyond the browser
 - Background scheduler after full Quit (login starts the app; routines still need the app process running)
 - MCP over HTTP/SSE transports and MCP for CLI harnesses (stdio + HTTP harnesses only today)
 - Chat attachments
@@ -148,7 +149,7 @@ v0.4.0 added MCP connectors, `${secret:}` substitution with output masking, and 
 
 The rest of the official list below is the north star, not a claim that every item is wired today.
 
-<img src="./docs/map.svg" alt="v0.5 map: roster, chat, memory and files, shell approvals" width="640" />
+<img src="./docs/map.svg" alt="v0.6 map: roster, chat, memory and files, shell approvals" width="640" />
 
 ## UI and presence
 
@@ -231,6 +232,8 @@ If you need 24/7, keep a small machine awake — or stay on official Grok Bot.
 | `~/.opengrokbot/mcp.json` | MCP server declarations (command, args, env — env may use `${secret:name}`) |
 | `~/.opengrokbot/routine-runs.json` | Routine run history (last 20 per routine) |
 | `~/.opengrokbot/skills/` | Skills library — one markdown file per skill, YAML frontmatter |
+| `~/.opengrokbot/browser-profile/` | Playwright MCP preset's own browser profile (never your everyday browser) |
+| `~/.opengrokbot/browser/` | Linked-browser artifacts: last screenshot, generated ego action scripts |
 | `~/.opengrokbot/bots/` | Roster YAML (seeded from `data/bots/` on first run) |
 | `~/.opengrokbot/transcripts/` | Chat history |
 | `~/.opengrokbot/memory/` | Per-Bot `MEMORY.md` |

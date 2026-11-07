@@ -1592,6 +1592,7 @@ function renderSettings() {
     models: "Models",
     connectors: "Connectors",
     skills: "Skills",
+    browser: "Browser",
     permissions: "Permissions",
     agent: "Agent",
     approvals: "Approvals",
@@ -1787,6 +1788,10 @@ function renderSettings() {
   if (setPane === "skills") {
     body.innerHTML = `<p class="set-caption">Loading skills…</p>`;
     void renderSkillsPane(body);
+  }
+  if (setPane === "browser") {
+    body.innerHTML = `<p class="set-caption">Loading browser options…</p>`;
+    void renderBrowserPane(body);
   }
   if (setPane === "permissions") {
     body.innerHTML = `
@@ -2042,6 +2047,101 @@ async function renderSkillsPane(body) {
       toast(err.message);
     }
   });
+}
+
+async function renderBrowserPane(body) {
+  let st;
+  try {
+    st = await api("/api/browser");
+  } catch (err) {
+    body.innerHTML = `<p class="set-caption">Could not load browser status: ${esc(err.message)}</p>`;
+    return;
+  }
+  if (setPane !== "browser") return;
+  const presetRow = (kind, title, desc, added) => `
+    <div class="approval-row" style="align-items:flex-start">
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:600">${esc(title)}</div>
+        <div class="hint">${esc(desc)}</div>
+      </div>
+      ${added ? `<span class="hint">Added — manage it under Connectors</span>` : `<button class="btn ghost" data-preset="${esc(kind)}">Add</button>`}
+    </div>`;
+  const linkRow = (provider, title, desc, found) => {
+    const active = st.link.enabled && st.link.provider === provider;
+    return `
+    <div class="approval-row" style="align-items:flex-start">
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:600">${esc(title)}</div>
+        <div class="hint">${esc(desc)}</div>
+        <div class="hint">${found ? `Detected: ${esc(found)}` : "Not found on this machine"}</div>
+      </div>
+      ${active ? `<button class="btn ghost" data-unlink="1">Linked — turn off</button>` : `<button class="btn ghost" data-link="${esc(provider)}" ${found ? "" : "disabled"}>Link</button>`}
+    </div>`;
+  };
+  body.innerHTML = `
+    <div class="field">
+      <label>Built-in browser (via MCP)</label>
+      <div class="hint">One click adds a browser MCP server under Connectors; Bots drive it with the mcp_ tools. Playwright uses its own profile folder on this machine — your everyday browser and its logins are not touched. First use downloads the server (and Playwright's browser) via npx.</div>
+      <div style="margin-top:8px">
+        ${presetRow("playwright", "Playwright MCP (Microsoft)", "General web automation via accessibility snapshots. Recommended default.", st.presets.playwright)}
+        ${presetRow("devtools", "Chrome DevTools MCP (Google)", "Drives Chrome with debugging superpowers: console, network, performance traces.", st.presets.devtools)}
+      </div>
+    </div>
+    <div class="field">
+      <label>Linked browser app</label>
+      <div class="hint">Linking gives Bots native browser_open / browser_snapshot / browser_click / browser_fill / browser_screenshot tools, run through the same Ask / Auto / Allow-all gate as shell commands. Linking is off by default and only ever set by you here.</div>
+      <div style="margin-top:8px">
+        ${linkRow("agent-browser", "agent-browser (open source)", "Apache-2.0 Rust CLI from Vercel Labs; drives its own Chrome. If commands fail with a missing-browser error, run: agent-browser install", st.detected.agentBrowser)}
+        ${linkRow("ego", "ego lite (Citro Labs)", "Consent means: Bots work in a Space inside ego lite and can use the logins that live there. The ego browser itself is closed-source (only its skill/docs repo is MIT) — link it only if you already trust it with your accounts.", st.detected.ego)}
+      </div>
+      <div class="hint">Screenshots from a linked browser appear in the Computer pane on the right.</div>
+    </div>`;
+  body.querySelectorAll("[data-preset]").forEach((btn) =>
+    btn.addEventListener("click", async () => {
+      try {
+        btn.textContent = "Adding… (first run may download a browser)";
+        st = await api("/api/browser/preset", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ kind: btn.dataset.preset }),
+        });
+        toast(st.note || "Browser preset added — see Connectors");
+        void renderBrowserPane(body);
+      } catch (err) {
+        toast(err.message);
+      }
+    }),
+  );
+  body.querySelectorAll("[data-link]").forEach((btn) =>
+    btn.addEventListener("click", async () => {
+      try {
+        await api("/api/browser/link", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ provider: btn.dataset.link, enabled: true }),
+        });
+        toast("Browser linked");
+        void renderBrowserPane(body);
+      } catch (err) {
+        toast(err.message);
+      }
+    }),
+  );
+  body.querySelectorAll("[data-unlink]").forEach((btn) =>
+    btn.addEventListener("click", async () => {
+      try {
+        await api("/api/browser/link", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ provider: st.link.provider, enabled: false }),
+        });
+        toast("Browser unlinked");
+        void renderBrowserPane(body);
+      } catch (err) {
+        toast(err.message);
+      }
+    }),
+  );
 }
 
 function renderMemImportBox(box) {
@@ -3153,6 +3253,29 @@ async function boot() {
     }, 1200);
   }
 }
+
+// ---- Live browser screenshot in the Computer pane ----
+(function initLiveScreen() {
+  const img = $("liveScreen");
+  const label = $("screenLabel");
+  if (!img) return;
+  let lastStamp = null;
+  async function poll() {
+    try {
+      const st = await api("/api/browser");
+      if (st.screen?.exists && st.screen.updatedAt !== lastStamp) {
+        lastStamp = st.screen.updatedAt;
+        img.src = `/api/browser/screen.png?t=${encodeURIComponent(lastStamp)}`;
+        img.hidden = false;
+        if (label) label.textContent = `Live browser screenshot · ${new Date(lastStamp).toLocaleTimeString()}`;
+      }
+    } catch {
+      /* browser status unavailable; keep the preview screen */
+    }
+  }
+  window.setInterval(poll, 8000);
+  void poll();
+})();
 
 // ---- Voice dictation (Web Speech API) ----
 // The mic button only appears where the browser provides speech

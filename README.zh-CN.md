@@ -50,12 +50,12 @@ pnpm install
 pnpm build:dmg
 ```
 
-产物在 `release/`（例如 `release/OpenGrokBot-0.5.0.dmg`、`release/OpenGrokBot-0.5.0-mac.zip`，以及 `release/mac/OpenGrokBot.app`）。
+产物在 `release/`（例如 `release/OpenGrokBot-0.6.0.dmg`、`release/OpenGrokBot-0.6.0-mac.zip`，以及 `release/mac/OpenGrokBot.app`）。
 
 若 `electron-builder` 在 DMG 步骤卡住，app 和 zip 仍然可用。可手动打 DMG：
 
 ```bash
-hdiutil create -volname "OpenGrokBot" -srcfolder release/mac/OpenGrokBot.app -ov -format UDZO release/OpenGrokBot-0.5.0.dmg
+hdiutil create -volname "OpenGrokBot" -srcfolder release/mac/OpenGrokBot.app -ov -format UDZO release/OpenGrokBot-0.6.0.dmg
 ```
 
 **安装未签名包：** macOS 可能拦截首次打开。请右键 **OpenGrokBot → 打开**，或执行：
@@ -72,7 +72,7 @@ pnpm dev:desktop
 
 会先跑 TypeScript 开发服务，等 `/api/health` 就绪后再打开 Electron 窗口。
 
-**v0.5.0 限制：** 系统 `PATH` 里要有 Node 20+（应用会调用本机 `node` 跑服务）。无代码签名或自动更新；已有菜单栏托盘，并可选用 macOS 登录项在登录后后台启动（托盘常驻）；关窗不会退出进程，需从托盘菜单 **Quit** 才完全退出。完全退出后定时 routine 不会跑（未安装独立 launchd 代理）。CLI 执行器（`codex`、`cursor`、`dsh`）仍需在本机单独安装，且 MCP 工具、`skill_read`、`${secret:}` 替换和表单卡目前只接了 HTTP 执行器（OpenAI 兼容 / Ollama），CLI 执行器没有（但打 `/技能id` 仍然有效——指令就写在提示词里）。语音听写需要支持 Web Speech API 的浏览器（Chrome）；不支持的环境里麦克风按钮会自动隐藏。用户数据仍在 `~/.opengrokbot/`。
+**v0.6.0 限制：** 系统 `PATH` 里要有 Node 20+（应用会调用本机 `node` 跑服务）。无代码签名或自动更新；已有菜单栏托盘，并可选用 macOS 登录项在登录后后台启动（托盘常驻）；关窗不会退出进程，需从托盘菜单 **Quit** 才完全退出。完全退出后定时 routine 不会跑（未安装独立 launchd 代理）。CLI 执行器（`codex`、`cursor`、`dsh`）仍需在本机单独安装，且 MCP 工具、浏览器工具、`skill_read`、`${secret:}` 替换和表单卡目前只接了 HTTP 执行器（OpenAI 兼容 / Ollama），CLI 执行器没有（但打 `/技能id` 仍然有效——指令就写在提示词里）。语音听写需要支持 Web Speech API 的浏览器（Chrome）；不支持的环境里麦克风按钮会自动隐藏。ego lite 适配器是按 Citro Labs 公开的 JS SDK 文档写的，还没有在真实 ego 安装上验证过；agent-browser 适配器和 Playwright MCP 预设都已真机实测。用户数据仍在 `~/.opengrokbot/`。
 
 ### 后台通知
 
@@ -98,17 +98,16 @@ pnpm dev:desktop
 | 上手 | 发一条消息，不是去搭工作流编辑器 | 一样 |
 | 价格 | Cursor / SuperGrok 订阅 | 免费。MIT |
 
-## v0.5 现在有什么
+## v0.6 现在有什么
 
 这是能跑起来的本机应用，不是只有一篇 README。
 
-**v0.5.0 新增** — Bot 有了全员共享的技能手册，你旧助手的记忆也有了入口：
+**v0.6.0 新增** — Bot 能开真浏览器了，两条路，都要你点头才启用：
 
-- **Skills 技能库** — 可复用的指令集以 markdown 存在 `~/.opengrokbot/skills/`（Settings → Skills 管理，自带两个示例）。在聊天里打 `/deep-research 你的任务` 直接跑一条，或者让 Bot 遇到匹配的任务时自己用 `skill_read` 把技能加载进来。
-- **记忆导入** — 把 ChatGPT、Claude 或其他助手导出的记忆粘进来（Settings → Agent），新事实会落到所选 Bot 的 `MEMORY.md` 里、挂在带日期的标题下；它已经知道的逐行跳过，重复导入等于没导。
-- **语音听写** — 输入框旁有麦克风按钮（Web Speech API），语音转成文字先进输入框。它只在支持的浏览器里出现。
+- **内置浏览器（MCP 预设）** — Settings → Browser 一键添加微软的 Playwright MCP（用它自己的配置目录和 Chrome-for-Testing 构建，不需要系统装 Chrome；添加时会自动跑一次浏览器下载）或 Google 的 Chrome DevTools MCP。Bot 通过现成的 `mcp_` 工具驱动。
+- **联动本机浏览器应用** — 你要是已经在用浏览器 agent 的命令行工具，可以联动它（默认关闭，只能你在这里开）：开源的 **agent-browser**（Apache-2.0，Vercel Labs 出品）或 **ego lite**（Citro Labs；登录态 Space 很好用，但浏览器本体闭源——联动前的同意文案会写明）。联动后 Bot 多出原生的 `browser_open / browser_snapshot / browser_click / browser_fill / browser_screenshot` 工具，和 Shell 命令走同一套 Ask / Auto / Allow-all 审批门，截图会实时出现在右侧电脑栏。
 
-v0.4.0 加的是 MCP 连接器、`${secret:}` 替换加输出打码、routine 的 Webhook 触发；v0.3.0 加的是交互式表单卡 + 只写密钥字段；v0.2 加的是桌面应用。完整历史：[CHANGELOG.md](CHANGELOG.md)。
+v0.5.0 加的是 Skills 技能库、记忆导入和语音听写；v0.4.0 加的是 MCP 连接器、`${secret:}` 替换加输出打码、routine 的 Webhook 触发；v0.3.0 加的是交互式表单卡 + 只写密钥字段；v0.2 加的是桌面应用。完整历史：[CHANGELOG.md](CHANGELOG.md)。
 
 **这个版本有**
 
@@ -132,13 +131,15 @@ v0.4.0 加的是 MCP 连接器、`${secret:}` 替换加输出打码、routine �
 - **Skills 技能库** — `~/.opengrokbot/skills/` 里的 markdown 技能（Settings → Skills 管理），全体 Bot 共享；`/` 选择器里 routine 和技能列在一起。Bot 的系统提示里带有技能描述列表，任务匹配时能自己用 `skill_read` 工具加载；打 `/<技能id> 任务` 则直接把技能预载成本轮指令
 - **记忆导入** — Settings → Agent：把其他助手的记忆导出粘进任意 Bot 的 `MEMORY.md`，逐行和已有记忆去重（`POST /api/bots/:id/memory/import`）
 - **语音听写** — 支持 Web Speech API 的浏览器（Chrome）里输入框旁会出现麦克风按钮；转写先进输入框等你确认，不会自动发送
+- **浏览器控制** — Settings → Browser：一键 MCP 预设（Playwright MCP 用自己的 `~/.opengrokbot/browser-profile`、Chrome DevTools MCP），外加可选联动本机的 agent-browser 或 ego lite。联动浏览器提供原生的 `browser_*` 工具、走 localExec 审批门；截图会渲染到右侧电脑栏（`~/.opengrokbot/browser/last-screenshot.png`）
 - **后台通知** — 浏览器或 macOS 在回复完成、需要审批或 routine 触发时提醒
 - Settings → Agent：清空花名册，或重置为 `data/bots/` 里的 starter 配置
 - 右边「电脑」栏是状态预览（干活时图标变紫、壁纸跟时间走），不是一台真在跑的虚拟机
 
 **还没有**
 
-- 真浏览器 / computer-use
+- 视觉/坐标式 computer use 和浏览器实时画面（现在是无障碍快照 + 静态截图）
+- 浏览器之外的桌面级 computer use
 - 完全退出后的后台定时（登录项只会启动应用；routine 仍需应用进程在跑）
 - MCP 的 HTTP/SSE 传输，以及 CLI 执行器下的 MCP（现在只有 stdio + HTTP 执行器）
 - 聊天附件
@@ -148,7 +149,7 @@ v0.4.0 加的是 MCP 连接器、`${secret:}` 替换加输出打码、routine �
 
 下面那份官方清单是方向，不是「今天每一项都接好了」。
 
-<img src="./docs/map.svg" alt="v0.5 产品图：花名册、聊天、记忆和文件、shell 审批" width="640" />
+<img src="./docs/map.svg" alt="v0.6 产品图：花名册、聊天、记忆和文件、shell 审批" width="640" />
 
 ## 界面与在场感
 
@@ -233,6 +234,8 @@ OpenGrokBot 跑在你这台机器上。盖子一合，团队就停。
 | `~/.opengrokbot/mcp.json` | MCP 服务器声明（命令、参数、env；env 可用 `${secret:name}`） |
 | `~/.opengrokbot/routine-runs.json` | Routine 运行历史（每条保留最近 20 次） |
 | `~/.opengrokbot/skills/` | 技能库——一个技能一个 markdown 文件，YAML frontmatter |
+| `~/.opengrokbot/browser-profile/` | Playwright MCP 预设自己的浏览器配置（永远不是你的日常浏览器） |
+| `~/.opengrokbot/browser/` | 联动浏览器的产物：最近截图、生成的 ego 动作脚本 |
 | `~/.opengrokbot/bots/` | 花名册 YAML（首次从 `data/bots/` 拷贝） |
 | `~/.opengrokbot/transcripts/` | 聊天记录 |
 | `~/.opengrokbot/memory/` | 每个 Bot 一份 `MEMORY.md` |

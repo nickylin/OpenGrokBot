@@ -20,6 +20,8 @@ export type Settings = {
   memoryDir: string;
   dshProfile: DshProfile;
   browserProfile: string;
+  /** Optional link to a local browser app the user explicitly enabled. */
+  browserLink?: { provider: "ego" | "agent-browser"; enabled: boolean };
   localExec: LocalExec;
   timezone: string;
   scheduler: SchedulerMode;

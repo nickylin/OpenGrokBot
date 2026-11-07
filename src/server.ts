@@ -20,6 +20,15 @@ import {
   saveSettings,
 } from "./store.js";
 import { deleteSkill, listSkills, saveSkill } from "./skills.js";
+import {
+  browserPreset,
+  detectProvider,
+  ensurePlaywrightBrowser,
+  screenshotInfo,
+  screenshotPath,
+  type BrowserProvider,
+} from "./browser.js";
+import { readFile } from "node:fs/promises";
 import { loadMcpConfig, mcpManager } from "./mcp.js";
 import { randomBytes } from "node:crypto";
 import type { McpServerConfig } from "./types.js";
@@ -339,6 +348,67 @@ export async function startServer(): Promise<void> {
     const removed = await deleteSkill(req.params.id);
     if (!removed) return reply.code(404).send({ error: "unknown skill" });
     return { ok: true };
+  });
+
+  // ---- Browser control: MCP presets + linked local browser apps ----
+  async function browserStatus() {
+    const settings = await loadSettings();
+    const cfg = await loadMcpConfig();
+    const names = new Set(cfg.map((s) => s.name));
+    const [ego, agentBrowser, screen] = await Promise.all([
+      detectProvider("ego"),
+      detectProvider("agent-browser"),
+      screenshotInfo(),
+    ]);
+    return {
+      presets: { playwright: names.has("playwright"), devtools: names.has("devtools") },
+      detected: { ego, agentBrowser },
+      link: settings.browserLink ?? { provider: "agent-browser", enabled: false },
+      screen,
+    };
+  }
+
+  app.get("/api/browser", async () => browserStatus());
+
+  app.post<{ Body: { kind?: string } }>("/api/browser/preset", async (req, reply) => {
+    const kind = req.body?.kind;
+    if (kind !== "playwright" && kind !== "devtools") {
+      return reply.code(400).send({ error: "kind must be playwright or devtools" });
+    }
+    // First-time Playwright setup downloads its browser build once; this
+    // can take a minute, and the note says what happened either way.
+    const note = kind === "playwright" ? await ensurePlaywrightBrowser() : undefined;
+    await mcpManager.upsertServer(browserPreset(kind));
+    const status = await browserStatus();
+    return note ? { ...status, note } : status;
+  });
+
+  app.post<{ Body: { provider?: string; enabled?: boolean } }>(
+    "/api/browser/link",
+    async (req, reply) => {
+      const provider = req.body?.provider;
+      const enabled = req.body?.enabled === true;
+      if (provider !== "ego" && provider !== "agent-browser") {
+        return reply.code(400).send({ error: "unknown provider" });
+      }
+      if (enabled) {
+        const found = await detectProvider(provider as BrowserProvider);
+        if (!found) {
+          return reply.code(400).send({ error: `${provider} CLI not found on this machine` });
+        }
+      }
+      await saveSettings({ browserLink: { provider: provider as BrowserProvider, enabled } });
+      return browserStatus();
+    },
+  );
+
+  app.get("/api/browser/screen.png", async (_req, reply) => {
+    try {
+      const data = await readFile(screenshotPath());
+      return reply.type("image/png").header("Cache-Control", "no-store").send(data);
+    } catch {
+      return reply.code(404).send({ error: "no screenshot yet" });
+    }
   });
 
   // Import memory exported from another AI assistant into a Bot's

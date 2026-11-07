@@ -47,6 +47,7 @@ import type { FormCardPayload } from "./types.js";
 import { mcpManager } from "./mcp.js";
 import { maskSecrets, substituteSecrets } from "./secrets.js";
 import { getSkill, listSkills } from "./skills.js";
+import { buildInvocation, linkedProvider, type BrowserAction } from "./browser.js";
 import { finishRoutineRun, recordRoutineRunStart } from "./store.js";
 import type { RoutineRunTrigger } from "./types.js";
 
@@ -873,6 +874,103 @@ export async function fulfillFormCancel(
   return { ok: true, messages: [cardMessage] };
 }
 
+const BROWSER_TOOLS: ChatCompletionTool[] = [
+  {
+    type: "function",
+    function: {
+      name: "browser_open",
+      description:
+        "Open a URL in the browser the user linked on this machine (Settings → Browser). Returns a snapshot of the page. Browser actions run locally and, in Ask mode, each one needs the user's approval first.",
+      parameters: {
+        type: "object",
+        properties: { url: { type: "string" } },
+        required: ["url"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "browser_snapshot",
+      description: "Get the linked browser's current page as an accessibility tree with element refs.",
+      parameters: { type: "object", properties: {} },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "browser_click",
+      description:
+        "Click an element in the linked browser. Prefer a CSS selector; an @ref from the latest snapshot also works. Returns a fresh snapshot.",
+      parameters: {
+        type: "object",
+        properties: { selector: { type: "string" } },
+        required: ["selector"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "browser_fill",
+      description: "Clear and fill a form field in the linked browser, by CSS selector (or @ref). Returns a fresh snapshot.",
+      parameters: {
+        type: "object",
+        properties: { selector: { type: "string" }, text: { type: "string" } },
+        required: ["selector", "text"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "browser_screenshot",
+      description: "Capture the linked browser's current page as a screenshot, shown in the user's Computer pane.",
+      parameters: { type: "object", properties: {} },
+    },
+  },
+];
+
+async function runBrowserAction(
+  settings: Settings,
+  name: string,
+  args: Record<string, unknown>,
+): Promise<string> {
+  const provider = linkedProvider(settings);
+  if (!provider) {
+    return JSON.stringify({ error: "no browser is linked; the user can enable one in Settings → Browser" });
+  }
+  const action = name.replace(/^browser_/, "") as BrowserAction;
+  const inv = await buildInvocation(provider, action, {
+    url: typeof args.url === "string" ? args.url : undefined,
+    selector: typeof args.selector === "string" ? args.selector : undefined,
+    text: typeof args.text === "string" ? args.text : undefined,
+  });
+  const mode = settings.localExec;
+  if (mode === "never") {
+    return JSON.stringify({ error: "localExec is never; browser control is disabled" });
+  }
+  if (mode === "ask") {
+    const label =
+      action === "open"
+        ? `open ${String(args.url ?? "")}`
+        : action === "click"
+          ? `click ${String(args.selector ?? "")}`
+          : action === "fill"
+            ? `fill ${String(args.selector ?? "")}`
+            : action;
+    return JSON.stringify({
+      needsApproval: true,
+      command: inv.command,
+      args: inv.args,
+      title: `Browser (${provider}): ${label}?`,
+      hint: "Ask the user to Allow once in chat. Do not pretend the action ran.",
+    });
+  }
+  if (mode !== "always") return assertNever(mode, "LocalExec");
+  return executeShell(inv.command, inv.args, settings.workspace);
+}
+
 async function runShell(
   settings: Settings,
   command: string,
@@ -1002,6 +1100,12 @@ async function execTool(
     }
     case "run_shell":
       return runShell(settings, String(args.command ?? ""), Array.isArray(args.args) ? args.args.map(String) : []);
+    case "browser_open":
+    case "browser_snapshot":
+    case "browser_click":
+    case "browser_fill":
+    case "browser_screenshot":
+      return runBrowserAction(settings, name, args);
     case "request_form": {
       if (!interactive) {
         return JSON.stringify({
@@ -1214,12 +1318,13 @@ async function processToolCalls(
       const handoff = await persistAssistant(threadId, label, "handoff", agent.id);
       await emit(onEvent, { type: "message", botId: threadId, message: handoff });
     }
-    if (call.function.name === "run_shell") {
+    if (call.function.name === "run_shell" || call.function.name.startsWith("browser_")) {
       try {
         const parsed = JSON.parse(output) as {
           needsApproval?: boolean;
           command?: string;
           args?: string[];
+          title?: string;
         };
         if (parsed.needsApproval) {
           pendingTurns.set(threadId, {
@@ -1230,7 +1335,7 @@ async function processToolCalls(
           const card = await persistAssistant(
             threadId,
             JSON.stringify({
-              title: `Run \`${parsed.command ?? "command"}\` on this machine?`,
+              title: parsed.title ?? `Run \`${parsed.command ?? "command"}\` on this machine?`,
               body: "localExec is Ask every time. Allow once only covers this command.",
               command: parsed.command,
               args: parsed.args ?? [],
@@ -1553,7 +1658,11 @@ async function runTurnCore(opts: {
         .map((s) => `- ${s.id} — ${s.description || s.name}`)
         .join("\n")}`
     : "";
-  const extra = [mentionContext, skillsBlock].filter(Boolean).join("\n");
+  const browserProvider = linkedProvider(settings);
+  const browserBlock = browserProvider
+    ? `A browser is linked on this machine via ${browserProvider}. Use browser_open to navigate, browser_snapshot to read the page, browser_click/browser_fill with CSS selectors (or @refs from a snapshot), and browser_screenshot to show the user what you see. Work step by step from snapshots; never invent element refs.`
+    : "";
+  const extra = [mentionContext, skillsBlock, browserBlock].filter(Boolean).join("\n");
   const messages = toOpenAI(usable, systemPrompt(agent, settings, extra, group, rosterContext));
   for (let i = messages.length - 1; i >= 0; i--) {
     if (messages[i].role === "user") {
@@ -1572,7 +1681,7 @@ async function runTurnCore(opts: {
     model,
     nest,
     interactive: nest === 0 && input.kind !== "routine",
-    tools: [...TOOLS, ...mcpTools],
+    tools: [...TOOLS, ...mcpTools, ...(browserProvider ? BROWSER_TOOLS : [])],
   };
   const finalText = await runAgentLoop(ctx, messages, onEvent);
 

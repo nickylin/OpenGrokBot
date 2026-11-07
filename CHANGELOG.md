@@ -1,5 +1,40 @@
 # Changelog
 
+## v0.6.0 — 2026-11-07
+
+Bots can drive a real browser — via MCP presets for everyone, and via a
+linked local browser app for users who already run one.
+
+- **Browser MCP presets (Settings → Browser)** — one click adds
+  Microsoft's Playwright MCP (`--browser chromium`, its own profile at
+  `~/.opengrokbot/browser-profile`; adding it also runs the one-time
+  `install-browser chrome-for-testing` download, ~120 MB, idempotent) or
+  Google's Chrome DevTools MCP (`--no-usage-statistics`). Bots use them
+  through the existing `mcp_` tools; manage them later under Connectors.
+  Live-verified: preset add → server ready with 25 tools → a Bot
+  navigated a test page and got its title/snapshot back. (Two wrong
+  turns on the way: the default `chrome` channel needs a system Chrome,
+  and an older Chromium build in the cache does not satisfy the pinned
+  version — the preset now always uses `chromium` + the install step.)
+- **Linked browser apps (Settings → Browser, off by default)** — detect
+  and explicitly link ego lite or agent-browser. Bots gain native
+  `browser_open / browser_snapshot / browser_click / browser_fill /
+  browser_screenshot` tools. Every action is translated to one CLI
+  invocation and passes the same localExec gate as `run_shell`: in Ask
+  mode each action raises an approval card naming the browser command.
+  Live-verified with agent-browser 0.41.2: a scripted model opened a
+  page, filled a field, clicked, read the changed page state back from a
+  snapshot, and screenshotted it; in Ask mode the same flow produced 5
+  approval cards and resumed after each Allow.
+- **Computer pane shows live screenshots** — `browser_screenshot` saves
+  to `~/.opengrokbot/browser/last-screenshot.png`; the pane polls
+  `GET /api/browser` and renders the latest frame.
+- **ego lite adapter** — implemented against Citro Labs' public JS SDK
+  (taskSpace + page.* via `ego-browser nodejs <script>`), with the
+  consent text calling out that the ego browser is closed-source.
+  Not yet verified against a live ego install; errors surface verbatim
+  so a version mismatch is visible rather than silent.
+
 ## v0.5.0 — 2026-11-07
 
 A shared playbook for Bots, an on-ramp for another assistant's memory,
